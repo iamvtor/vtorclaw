@@ -100,6 +100,7 @@ foreach ($line in ($specContent -split "`n")) {
     if ($trim -match '^  memory:\s*["'']?([^"''#]+)') { $specData['memory'] = $Matches[1].Trim() }
     if ($trim -match '^  cpus:\s*(\d+)') { $specData['cpus'] = [int]$Matches[1] }
     if ($trim -match '^  disk:\s*["'']?([^"''#]+)') { $specData['disk'] = $Matches[1].Trim() }
+    if ($trim -match '^  ubuntu:\s*["'']?([^"''#]+)') { $specData['ubuntu'] = $Matches[1].Trim() }
     if ($trim -match '^tailscale:') { $inTailscale = $true; continue }
     if ($inTailscale -and $trim -match '^\s*auth_key:\s*["'']?([^"''#]+)') { $specData['tailscale_key'] = $Matches[1].Trim(); $inTailscale = $false }
     if ($trim -match '^\s*file:\s*["'']?([^"''#]+)') { $specData['secrets_file'] = $Matches[1].Trim() }
@@ -112,6 +113,7 @@ if (-not $specData['vm_name']) { $specData['vm_name'] = "openclaw" }
 if (-not $specData['memory'])  { $specData['memory'] = "8G" }
 if (-not $specData['cpus'])    { $specData['cpus'] = 2 }
 if (-not $specData['disk'])    { $specData['disk'] = "30G" }
+if (-not $specData['ubuntu'])  { $specData['ubuntu'] = "24.04" }
 if (-not $specData['openclaw_channel']) { $specData['openclaw_channel'] = "stable" }
 
 # Apply CLI overrides (index syntax for strict mode safety)
@@ -132,7 +134,7 @@ if (-not $specData -or $specData -isnot [hashtable]) {
 }
 
 Write-Info "Using spec: $Spec"
-Write-Info "VM: $($specData['vm_name']) | Memory: $($specData['memory']) | CPUs: $($specData['cpus']) | Disk: $($specData['disk'])"
+Write-Info "VM: $($specData['vm_name']) | Image: ubuntu:$($specData['ubuntu']) | Memory: $($specData['memory']) | CPUs: $($specData['cpus']) | Disk: $($specData['disk'])"
 
 # --- Generate strong gateway token ------------------------------------------------
 $gatewayToken = [Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 }))
@@ -387,7 +389,7 @@ $launchArgs = @(
     "--cpus", $specData['cpus'],
     "--disk", $specData['disk'],
     "--cloud-init", $ciPath,
-    "ubuntu"
+    "ubuntu:$($specData['ubuntu'])"
 )
 
 & multipass $launchArgs
