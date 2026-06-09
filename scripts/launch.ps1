@@ -224,7 +224,15 @@ if ($secrets.Count -gt 0) {
 $tailscaleBlock = if ($specData['tailscale_key']) {
     "  - curl -fsSL https://tailscale.com/install.sh | sh`n  - tailscale up --authkey=$($specData['tailscale_key']) --hostname=$($specData['vm_name']) --accept-dns=true --accept-routes=true || true"
 } else {
-    "  # Tailscale not configured in spec"
+    "  - echo 'Tailscale not configured in spec' > /dev/null || true"
+}
+
+# Properly indent the JSON for the YAML literal block scalar (content: |).
+# Do NOT escape quotes - the | block is literal text.
+$indentedOpenClawJson = if ($openclawJson) {
+    ($openclawJson -split "`n" | ForEach-Object { "      $_" }) -join "`n"
+} else {
+    ""
 }
 
 # --- Clean cloud-init template with placeholders (easy to maintain) ----------------
@@ -349,7 +357,7 @@ final_message: |
 $cloudInit = $cloudInitTemplate `
     -replace '__GATEWAY_TOKEN__', $gatewayToken `
     -replace '__SECRET_ENV_LINES__', $secretEnvLines `
-    -replace '__OPENCLAW_CONFIG_JSON__', ($openclawJson -replace '"', '\"' -replace "`n", "`n      ") `
+    -replace '__OPENCLAW_CONFIG_JSON__', $indentedOpenClawJson `
     -replace '__TAILSCALE_BLOCK__', $tailscaleBlock `
     -replace '__VM_NAME__', $specData['vm_name']
 
