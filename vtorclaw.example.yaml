@@ -40,7 +40,31 @@ openclaw:
       # Example tighter policy:
       # deny: ["group:automation", "exec", "browser"]  # for non-browser agents
 
-    # You can add models, channels skeleton, logging, etc. here declaratively.
+    # Model providers — fully declarative.
+    # Strongly recommended: Run LiteLLM inside the VM as a unified OpenAI-compatible proxy.
+    # This lets you easily mix:
+    # - Free-tier Google account (for free Gemini models/quotas)
+    # - X Premium+ (Grok via native OAuth or API key if available)
+    # - NVIDIA free models, etc.
+    # without changing much in OpenClaw.
+    # See README for LiteLLM setup instructions + config.
+    models:
+      providers:
+        # Point OpenClaw at local LiteLLM proxy (recommended)
+        openai:
+          apiBase: "http://127.0.0.1:4000"   # LiteLLM default
+          apiKey:
+            source: "env"
+            provider: "default"
+            id: "LITELLM_MASTER_KEY"   # or just use a dummy if no auth
+
+    # Default model — use LiteLLM naming (provider/model)
+    # For free Google account: google/gemini-2.0-flash (free quotas)
+    # For X Premium+: xai/grok-3 (via native OAuth) or through LiteLLM
+    # NVIDIA free tier example: nvidia_nim/meta/llama-3.1-8b-instruct
+    agent:
+      model: "google/gemini-2.0-flash"   # free-tier from separate Google account
+
     # The launcher will always inject a strong random gateway token.
 
 secrets:
