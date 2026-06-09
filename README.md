@@ -34,10 +34,12 @@ This sits between "pure Docker gateway in VM" and "pure native with offloaded sa
    winget install --id Canonical.Multipass -e
    ```
 
-2. Copy the example spec and edit it:
+2. Copy the example spec + secrets template and edit them:
    ```powershell
    Copy-Item vtorclaw.example.yaml vtorclaw.yaml
-   # Edit vtorclaw.yaml with your values (model key, optional Tailscale key, RAM, etc.)
+   Copy-Item secrets.example.yaml secrets.yaml
+   # Edit vtorclaw.yaml (VM size, Tailscale etc.)
+   # Edit secrets.yaml with your GOOGLE_API_KEY from a free Google account (aistudio.google.com)
    ```
 
 3. Launch **with PowerShell 7+ only** (`pwsh`), **not** legacy Windows PowerShell 5.1 (`powershell`).
@@ -64,15 +66,24 @@ This sits between "pure Docker gateway in VM" and "pure native with offloaded sa
    - Launches the VM with cloud-init that creates the dedicated user, installs everything, builds sandbox images, writes the systemd service, starts it.
    - Prints final instructions (how to shell in, dashboard URL, next steps for channels).
 
-5. Connect and finish the last mile (unavoidable for channels):
+5. Connect and finish the last mile (OAuth for Grok + channels):
+
+After launch, shell in and run as the dedicated low-privilege user:
+
    ```powershell
    multipass shell openclaw
    sudo -u openclaw openclaw gateway status
-   sudo -u openclaw openclaw channels add --channel telegram --token "..."
-   # WhatsApp QR, etc.
+
+   # One-time: authenticate Grok via X Premium+ (device code flow — no API key required in most cases)
+   sudo -u openclaw openclaw models auth login --provider xai --method oauth
+
+   # Then add channels (WhatsApp will show a QR, Telegram needs a bot token, etc.)
+   sudo -u openclaw openclaw channels login
+   # or for a specific channel:
+   # sudo -u openclaw openclaw channels add --channel telegram --token "..."
    ```
 
-The VM is now your isolated OpenClaw instance with browser tools available.
+The VM is now your isolated OpenClaw instance with browser tools available (via the pre-built docker sandbox). All model auth and channels are owned by the `openclaw` user.
 
 ## Declarative Spec (`vtorclaw.yaml`)
 
@@ -116,12 +127,12 @@ tailscale:
 
 The launcher renders cloud-init from this spec + a template, so the entire VM + OpenClaw state is driven declaratively.
 
-### Using your existing subscriptions (Google AI Pro + X Premium+)
+### Using a free-tier Google account + X Premium+ (direct, recommended for your case)
 
-- **Google AI Pro (Gemini)**: Go to https://aistudio.google.com/app/apikey while logged in with the account that has AI Pro. Create an API key there. Put it in your secrets file as `GOOGLE_API_KEY`. This works great with OpenClaw's tool use and browser features.
-- **X Premium+ / Grok**: Chat access is excellent, but generating a real API key for external agents like OpenClaw is not always exposed with just Premium+. Many users need the standalone SuperGrok plan for a usable `XAI_API_KEY`. You can leave it commented out and use Gemini as primary for now.
+- **Google (free tier)**: Create a **separate free Google account** (do not use a paid AI Pro one — paid keys are routed to paid models only). Go to https://aistudio.google.com/app/apikey while logged into the free account and create a key. Put it in `secrets.yaml` as `GOOGLE_API_KEY`. This gives you real free Gemini quotas (gemini-2.0-flash etc.) that work with tools and the browser sandbox.
+- **X Premium+ / Grok**: Use native OAuth (device-code flow). No `XAI_API_KEY` is usually needed. After the VM is up, run the login command inside as the dedicated user (see "After launch" below). This is the path that works with Premium+ chat access for agents.
 
-The example spec above is already set up for this. Just drop your key in `secrets.yaml` and run the launcher.
+`secrets.example.yaml` + `vtorclaw.example.yaml` are set up for exactly this combination. Copy, fill the free Google key, launch, then do the one-time OAuth.
 
 ## Best Practices Implemented
 
@@ -136,11 +147,15 @@ The example spec above is already set up for this. Just drop your key in `secret
 - Resource limits and VM specs are explicit and overridable.
 - Cloud-init + spec = auditable, version-controllable deployment.
 
-## LiteLLM for Unified Model Access (Recommended)
+## Model Providers for Your Setup (Direct — No LiteLLM Needed)
 
-See the detailed section below ("Using Google AI Pro or X Premium+ with OpenClaw (via LiteLLM)") for why and how to run LiteLLM inside the VM. It turns your various subscriptions (Google AI Pro, X Premium+/SuperGrok, NVIDIA free models) into a single clean OpenAI-compatible endpoint that OpenClaw talks to.
+For the combination you are using (separate free Google account for Gemini + X Premium+ for Grok via native OAuth + optional NVIDIA), direct multi-provider configuration in OpenClaw is simpler and sufficient.
 
-I have pre-wired the example spec to use the LiteLLM pattern by default (`http://127.0.0.1:4000`).
+- Put `GOOGLE_API_KEY` (from a **free** Google account at aistudio.google.com) into `secrets.yaml`.
+- After the VM boots, run the one-time OAuth login for Grok as the dedicated user (device code flow, no console key required for Premium+ in most cases).
+- Set your agent model to `google/gemini-2.0-flash` (or `xai/grok-3` after OAuth).
+
+LiteLLM is only useful later if you want one unified endpoint + fallbacks when adding many more providers. It is **not** required for your current 2–3. The `vtorclaw.example.yaml` now shows the direct style by default.
 
 ## Provisioning Choices (Multipass + Cloud-Init vs Packer)
 
@@ -199,96 +214,13 @@ Paid Google AI Pro keys do not give free-tier Gemini access. That's why a separa
 - Easy model switching, fallbacks (e.g. try Gemini first, fall back to Grok), logging, caching, and spend tracking — all inside the isolated VM.
 - Perfect for your setup: keep keys out of OpenClaw config, support "free" NVIDIA models, and keep everything declarative.
 
-#### How to hook up LiteLLM to your providers
+#### LiteLLM (only if you add more providers later)
 
-1. **Get the keys** (matching your plan)
-   - Free-tier Google account (for free Gemini models/quota): Create a completely separate free Google account (don't use your paid one). Then go to https://aistudio.google.com/app/apikey while logged into the *free* account and create a key → `GOOGLE_API_KEY`. This gives you access to the free-tier models (e.g. gemini-2.0-flash with free quotas).
-   - X Premium+ for Grok: Preferred is native OAuth (no separate key — see the Grok OAuth section below for the device-code command you run inside the VM). If you can obtain an xAI API key (via grok.com settings or standalone SuperGrok), put it here as `XAI_API_KEY`.
-   - NVIDIA free models (optional): Usually at https://build.nvidia.com or integrate.api.nvidia.com. Create a key → `NVIDIA_API_KEY`.
+If you later want a single OpenAI-compatible endpoint + easy fallbacks/logging across many providers (beyond free Google + X + optional NVIDIA), you can run LiteLLM inside the VM as an optional proxy.
 
-2. **Add to your secrets.yaml**
-   ```yaml
-   # From your separate *free* Google account (for free Gemini models)
-   GOOGLE_API_KEY: "AIzaSyYourFreeAccountKeyHere..."
+For your current setup the direct `google:` provider + native xai OAuth is simpler and what the examples are configured for. See the "LiteLLM (optional later)" notes higher up if you want to go that route in the future.
 
-   # For Grok — prefer native OAuth (no key). Only fill this if using the API-key path.
-   # XAI_API_KEY: "xai-..."
-
-   # Optional
-   NVIDIA_API_KEY: "nvapi-..."
-   LITELLM_MASTER_KEY: "sk-1234"   # optional but recommended for LiteLLM auth
-   ```
-
-3. **LiteLLM config example** (create `litellm_config.yaml` inside the VM or via the launcher)
-
-   This example focuses on your **Google AI Pro** (paid Gemini) + **NVIDIA free-tier** models. Grok is handled natively via OAuth (see section above), but you can also proxy it through LiteLLM if you prefer a single endpoint.
-
-   ```yaml
-   model_list:
-     # Paid Gemini from your Google AI Pro subscription
-     - model_name: google/gemini-2.0-flash
-       litellm_params:
-         model: gemini/gemini-2.0-flash
-         api_key: os.environ/GOOGLE_API_KEY
-
-     - model_name: google/gemini-2.0-pro
-       litellm_params:
-         model: gemini/gemini-2.0-pro
-         api_key: os.environ/GOOGLE_API_KEY
-
-     # NVIDIA free / low-cost models (via their platform credits)
-     - model_name: nvidia/llama-3.1-8b
-       litellm_params:
-         model: nvidia_nim/meta/llama-3.1-8b-instruct
-         api_base: https://integrate.api.nvidia.com/v1
-         api_key: os.environ/NVIDIA_API_KEY
-
-     - model_name: nvidia/llama-3.1-70b
-       litellm_params:
-         model: nvidia_nim/meta/llama-3.1-70b-instruct
-         api_base: https://integrate.api.nvidia.com/v1
-         api_key: os.environ/NVIDIA_API_KEY
-
-     # Optional: proxy Grok too (if you want everything behind one endpoint)
-     # - model_name: xai/grok-3
-     #   litellm_params:
-     #     model: xai/grok-3
-     #     api_key: os.environ/XAI_API_KEY   # only if using API key path
-
-   litellm_settings:
-     drop_params: true
-     request_timeout: 600
-
-   general_settings:
-     master_key: os.environ/LITELLM_MASTER_KEY   # optional
-   ```
-
-   Then in OpenClaw you can use the aliases directly (or through the LiteLLM openai provider).
-
-4. **Run LiteLLM**
-   - Install: `pip install litellm[proxy]`
-   - Start: `litellm --config litellm_config.yaml --port 4000 --host 0.0.0.0`
-   - For production in the VM: run it as a systemd service (the launcher can do this).
-
-5. **Point OpenClaw at LiteLLM** (in your `vtorclaw.yaml` or directly in the VM)
-
-   ```yaml
-   models:
-     providers:
-       openai:
-         apiBase: "http://127.0.0.1:4000"
-         apiKey:
-           source: "env"
-           provider: "default"
-           id: "LITELLM_MASTER_KEY"
-
-   agent:
-     model: "google/gemini-2.0-flash"   # or "xai/grok-3" or your nvidia alias
-   ```
-
-Now OpenClaw only talks to localhost:4000. Switch models by just changing the `model:` string.
-
-I have already updated `vtorclaw.example.yaml` to default to the LiteLLM pattern. If you want me to also add automatic LiteLLM installation + systemd service + sample `litellm_config.yaml` generation into the cloud-init/launcher, just say the word and I'll implement it.
+The example now defaults to direct providers (matching your free Google + X Premium+ OAuth plan). LiteLLM can be added later as an optional layer only if you expand beyond these providers.
 
 ## Next Steps & Customization
 

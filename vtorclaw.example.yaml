@@ -40,30 +40,23 @@ openclaw:
       # Example tighter policy:
       # deny: ["group:automation", "exec", "browser"]  # for non-browser agents
 
-    # Model providers — fully declarative.
-    # Strongly recommended: Run LiteLLM inside the VM as a unified OpenAI-compatible proxy.
-    # This lets you easily mix:
-    # - Free-tier Google account (for free Gemini models/quotas)
-    # - X Premium+ (Grok via native OAuth or API key if available)
-    # - NVIDIA free models, etc.
-    # without changing much in OpenClaw.
-    # See README for LiteLLM setup instructions + config.
+    # Model providers — direct (no LiteLLM required for free Google + X Premium+).
+    # - Google: use a separate free Google account (aistudio.google.com) for real free-tier quotas.
+    # - X Premium+: use native OAuth after launch (see post-launch steps). No API key needed in most cases.
+    # - Optional: add NVIDIA etc. directly or via LiteLLM only if you add many more providers later.
     models:
       providers:
-        # Point OpenClaw at local LiteLLM proxy (recommended)
-        openai:
-          apiBase: "http://127.0.0.1:4000"   # LiteLLM default
+        google:
           apiKey:
             source: "env"
             provider: "default"
-            id: "LITELLM_MASTER_KEY"   # or just use a dummy if no auth
+            id: "GOOGLE_API_KEY"
 
-    # Default model — use LiteLLM naming (provider/model)
-    # For free Google account: google/gemini-2.0-flash (free quotas)
-    # For X Premium+: xai/grok-3 (via native OAuth) or through LiteLLM
-    # NVIDIA free tier example: nvidia_nim/meta/llama-3.1-8b-instruct
+    # Default model for the agent.
+    # google/gemini-2.0-flash works great with the free account key + tools/browser.
+    # For Grok after you run the OAuth login inside the VM: xai/grok-3 or xai/grok-4 etc.
     agent:
-      model: "google/gemini-2.0-flash"   # free-tier from separate Google account
+      model: "google/gemini-2.0-flash"   # or "xai/grok-3" after OAuth setup
 
     # The launcher will always inject a strong random gateway token.
 

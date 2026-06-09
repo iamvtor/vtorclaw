@@ -175,14 +175,29 @@ $baseConfig = @{
         telegram = @{ dmPolicy = "pairing" }
         whatsapp = @{ dmPolicy = "pairing" }
     }
+    # Direct google provider support for free-tier key (injected via secrets Environment).
+    # User can override/extend in their openclaw.config block (future merge improvement)
+    # or after launch. xAI is expected to be added via native OAuth post-boot.
+    models = @{
+        providers = @{
+            google = @{
+                apiKey = @{
+                    source = "env"
+                    provider = "default"
+                    id = "GOOGLE_API_KEY"
+                }
+            }
+        }
+    }
 }
 
-# Merge user-provided openclaw.config from the spec (naive but effective for this use case)
+# User openclaw.config block (from the spec) is captured for future richer merging.
+# Today the launcher guarantees the critical security defaults + gateway token + a
+# working google provider (for your free-tier GOOGLE_API_KEY from secrets).
+# xAI is added via the post-launch `openclaw models auth login --provider xai --method oauth`.
+# You can always edit /home/openclaw/.openclaw/openclaw.json as the openclaw user after boot.
 if ($spec['openclaw_config_raw']) {
-    # For a more robust merge in v2 we could use a YAML parser.
-    # For now we document that users put the keys they want under openclaw.config
-    # and we keep the strong defaults + token. Users can edit inside the VM after first boot.
-    Write-Info "User openclaw.config block detected in spec — it will be honored where possible (launcher keeps security defaults + token)."
+    Write-Info "User openclaw.config block detected in spec (will be available for manual review/merge inside the VM)."
 }
 
 $openclawJson = $baseConfig | ConvertTo-Json -Depth 10
