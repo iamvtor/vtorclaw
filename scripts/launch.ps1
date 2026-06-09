@@ -380,8 +380,11 @@ if (-not (Get-Command multipass -ErrorAction SilentlyContinue)) {
 }
 
 # On a brand new Multipass install the image catalog / "ubuntu" remote may not be populated yet.
-# Running `multipass find` once downloads the catalog and registers the official remotes.
-Write-Info "Tip: On first use of Multipass, run 'multipass find' in another window if you hit remote/image errors."
+# We run `multipass find` (quietly) automatically — it is the documented one-time step
+# that downloads the catalog and registers the official remotes. This keeps things
+# as close to zero-touch as possible.
+Write-Info "Ensuring Multipass image catalog is populated (one-time on fresh installs)..."
+& multipass find | Out-Null
 
 # --- Launch -----------------------------------------------------------------------
 Write-Info "Launching Multipass VM (this can take a couple of minutes)..."
