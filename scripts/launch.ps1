@@ -262,6 +262,8 @@ packages:
   - jq
   - ca-certificates
   - gnupg
+  - nodejs
+  - npm
 
 write_files:
   - path: /etc/systemd/system/openclaw-gateway.service
@@ -308,6 +310,9 @@ runcmd:
   - sudo -u openclaw bash -c 'curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-onboard --install-method npm'
 
   - ln -sf /home/openclaw/.openclaw/bin/openclaw /usr/local/bin/openclaw || true
+
+  # Make the openclaw CLI available in PATH for the dedicated user (for sudo -u openclaw openclaw ... and any direct use)
+  - sudo -u openclaw bash -c 'echo "export PATH=/usr/local/bin:\$PATH" >> ~/.bashrc && echo "export PATH=/usr/local/bin:\$PATH" >> ~/.profile'
 
   # Pre-build sandbox images (critical for browser tools)
   - |
