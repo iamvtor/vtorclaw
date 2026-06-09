@@ -89,7 +89,7 @@ foreach ($line in ($specContent -split "`n")) {
     if ($trim -match '^openclaw:') { $inOpenclawConfig = $false; continue }
     if ($trim -match '^  channel:\s*["'']?([^"''#]+)') { $spec['openclaw_channel'] = $Matches[1].Trim(); continue }
     if ($trim -match '^  config:') { $inOpenclawConfig = $true; continue }
-    if ($inOpenclawConfig -and $trim -match '^\s{4}') {
+    if ($inOpenclawConfig -and $line -match '^\s{4}') {
         $openclawConfigLines += $line
         continue
     } else {
@@ -121,6 +121,17 @@ if ($Name)   { $spec['vm_name'] = $Name }
 
 Write-Info "Using spec: $Spec"
 Write-Info "VM: $($spec['vm_name']) | Memory: $($spec['memory']) | CPUs: $($spec['cpus']) | Disk: $($spec['disk'])"
+
+# Defensive: if $spec is somehow not a hashtable (e.g. script file on disk is corrupted from earlier bad state),
+# give a clear recovery instruction instead of a cryptic "index into string" error later.
+if (-not $spec -or $spec -isnot [hashtable]) {
+    Write-Err "Internal error: `$spec is not a hashtable (type: $($spec.GetType().FullName))."
+    Write-Host "This usually means your local copy of launch.ps1 is corrupted (previous bad pull or edit)."
+    Write-Host "Recover with:"
+    Write-Host "  Invoke-WebRequest https://raw.githubusercontent.com/iamvtor/vtorclaw/main/scripts/launch.ps1 -OutFile .\scripts\launch.ps1"
+    Write-Host "Then run the script again."
+    exit 1
+}
 
 # --- Generate strong gateway token ------------------------------------------------
 $gatewayToken = [Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 }))
