@@ -307,9 +307,15 @@ runcmd:
   - usermod -aG docker openclaw
 
   # Native install as the dedicated user (best practice)
-  - sudo -u openclaw bash -c 'curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-onboard --install-method npm'
+  # Capture output to /tmp for debugging (the external script has occasionally not produced the expected binary)
+  - sudo -u openclaw bash -c 'curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-onboard --install-method npm' > /tmp/openclaw-install.log 2>&1 || echo "OPENCLAW NPM INSTALL FAILED (exit $?) - see /tmp/openclaw-install.log"
+  - cat /tmp/openclaw-install.log | tail -20 || true
 
   - ln -sf /home/openclaw/.openclaw/bin/openclaw /usr/local/bin/openclaw || true
+
+  # Post-install verification (prints clear errors + install log tail to cloud-init log if the binary is missing)
+  - test -x /home/openclaw/.openclaw/bin/openclaw || (echo "ERROR: openclaw binary missing after install step" ; ls -l /home/openclaw/.openclaw/bin/ || true ; cat /tmp/openclaw-install.log | tail -30 || true)
+  - test -L /usr/local/bin/openclaw && test -x /usr/local/bin/openclaw || (echo "ERROR: /usr/local/bin/openclaw symlink missing or broken" ; ls -l /usr/local/bin/openclaw || true)
 
   # Make the openclaw CLI available in PATH for the dedicated user (for sudo -u openclaw openclaw ... and any direct use)
   - sudo -u openclaw bash -c 'echo "export PATH=/usr/local/bin:\$PATH" >> ~/.bashrc && echo "export PATH=/usr/local/bin:\$PATH" >> ~/.profile'
@@ -341,9 +347,9 @@ runcmd:
 
 __TAILSCALE_BLOCK__
 
-  # Best-effort health
+  # Best-effort health - verify the CLI is usable as the dedicated user (this exercises the full install + symlink)
   - sleep 8
-  - sudo -u openclaw openclaw gateway status || echo "Gateway may still be starting — check with 'sudo -u openclaw openclaw gateway status'"
+  - sudo -u openclaw /usr/local/bin/openclaw gateway status || echo "Gateway may still be starting — check with 'sudo -u openclaw /usr/local/bin/openclaw gateway status' ; ls -l /usr/local/bin/openclaw || true ; ls -l /home/openclaw/.openclaw/bin/openclaw || true ; echo 'CLI install appears to have failed - inspect /var/log/cloud-init-output.log for the npm install step'"
 
 final_message: |
   🦞 OpenClaw VM is ready (or starting).
@@ -352,9 +358,11 @@ final_message: |
     multipass shell __VM_NAME__
 
   As the dedicated user:
-    sudo -u openclaw openclaw gateway status
-    sudo -u openclaw openclaw doctor
-    sudo -u openclaw openclaw security audit
+    sudo -u openclaw /usr/local/bin/openclaw gateway status
+    sudo -u openclaw /usr/local/bin/openclaw doctor
+    sudo -u openclaw /usr/local/bin/openclaw security audit
+
+  (If the bare 'openclaw' command is not found under sudo -u, use the full path above. We are debugging why the install step sometimes doesn't produce the binary/symlink.)
 
   Browser tools are pre-provisioned via the Docker sandbox backend.
 
