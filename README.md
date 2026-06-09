@@ -40,14 +40,25 @@ This sits between "pure Docker gateway in VM" and "pure native with offloaded sa
    # Edit vtorclaw.yaml with your values (model key, optional Tailscale key, RAM, etc.)
    ```
 
-3. Launch (one command):
+3. Launch **with PowerShell 7+ only** (`pwsh`), **not** legacy Windows PowerShell 5.1 (`powershell`).
+
+   Windows has two PowerShell engines:
+   - Old v5.1 (`powershell.exe`) — the script will now detect it at the top and exit with a clear message + the exact command to use your 7.5.5 instead.
+   - Modern 7+ (`pwsh.exe` — you have 7.5.5) — **use this one**.
+
    ```powershell
-   .\scripts\launch.ps1 -Spec vtorclaw.yaml
+   pwsh -File .\\scripts\\launch.ps1 -Spec vtorclaw.yaml
    # Or with overrides:
-   # .\scripts\launch.ps1 -Spec vtorclaw.yaml -Memory 12G -Cpus 4
+   # pwsh -File .\\scripts\\launch.ps1 -Spec vtorclaw.yaml -Memory 12G -Cpus 4
    ```
 
-4. The script:
+   If the `pwsh` command isn't in your PATH, use the full path to your 7.5.5 installation:
+   ```powershell
+   & "C:\\Program Files\\PowerShell\\7\\pwsh.exe" -File .\\scripts\\launch.ps1 -Spec vtorclaw.yaml
+   ```
+
+4. The script (must be run with pwsh 7+):
+   - Checks that you're using PowerShell 7+ (exits with instructions if you're accidentally using the old v5.1).
    - Generates a strong random gateway token.
    - Renders a secure-by-default `openclaw.json` (sandbox non-main + browser enabled, pairing policies, etc.).
    - Launches the VM with cloud-init that creates the dedicated user, installs everything, builds sandbox images, writes the systemd service, starts it.
@@ -152,7 +163,7 @@ If you prefer starting with Packer (or the hybrid), say the word and we'll add a
 
 ### LiteLLM (optional later)
 
-If you later want a single OpenAI-compatible endpoint + easy fallbacks/logging across more providers, you can add LiteLLM inside the VM. It sits between OpenClaw and your actual providers (free Google key, NVIDIA, etc.). For your current 2–3, direct is simpler.
+If you later want a single OpenAI-compatible endpoint + easy fallbacks/logging across more providers, you can add LiteLLM inside the VM. It sits between OpenClaw and your actual providers (free Google key, NVIDIA, etc.). For your current 2–3, direct multi-provider config is simpler and what the examples now default to.
 
 ## Configurable Resources
 

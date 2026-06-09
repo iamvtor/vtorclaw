@@ -49,6 +49,19 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+# Require PowerShell 7+ (the script uses modern syntax and the generated cloud-init
+# is for a Linux guest; running under Windows PowerShell 5.1 can cause parser
+# errors on || / here-strings etc.)
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    Write-Host "ERROR: This script requires PowerShell 7+. You appear to be running Windows PowerShell 5.1." -ForegroundColor Red
+    Write-Host "Please run it with the pwsh executable instead:" -ForegroundColor Yellow
+    Write-Host "    pwsh -File .\\scripts\\launch.ps1 -Spec vtorclaw.yaml" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "If you have PS 7.5.5 installed, you can also use the full path, e.g.:" -ForegroundColor Yellow
+    Write-Host "    & 'C:\\Program Files\\PowerShell\\7\\pwsh.exe' -File .\\scripts\\launch.ps1 -Spec vtorclaw.yaml" -ForegroundColor Yellow
+    exit 1
+}
+
 function Write-Info { param($msg) Write-Host "[INFO] $msg" -ForegroundColor Cyan }
 function Write-Warn { param($msg) Write-Host "[WARN] $msg" -ForegroundColor Yellow }
 function Write-Err  { param($msg) Write-Host "[ERROR] $msg" -ForegroundColor Red }
@@ -68,12 +81,13 @@ $specContent = Get-Content $Spec -Raw
 $spec = @{}
 $inOpenclawConfig = $false
 $openclawConfigLines = @()
+$inTailscale = $false
 
 foreach ($line in ($specContent -split "`n")) {
     $trim = $line.Trim()
     if ($trim -match '^vm:') { $inOpenclawConfig = $false; continue }
     if ($trim -match '^openclaw:') { $inOpenclawConfig = $false; continue }
-    if ($trim -match '^  channel:\s*["'']?([^"''#]+)') { $spec.openclaw_channel = $Matches[1].Trim(); continue }
+    if ($trim -match '^  channel:\s*["'']?([^"''#]+)') { $spec['openclaw_channel'] = $Matches[1].Trim(); continue }
     if ($trim -match '^  config:') { $inOpenclawConfig = $true; continue }
     if ($inOpenclawConfig -and $trim -match '^\s{4}') {
         $openclawConfigLines += $line
@@ -82,31 +96,31 @@ foreach ($line in ($specContent -split "`n")) {
         $inOpenclawConfig = $false
     }
 
-    if ($trim -match '^  name:\s*["'']?([^"''#]+)') { $spec.vm_name = $Matches[1].Trim() }
-    if ($trim -match '^  memory:\s*["'']?([^"''#]+)') { $spec.memory = $Matches[1].Trim() }
-    if ($trim -match '^  cpus:\s*(\d+)') { $spec.cpus = [int]$Matches[1] }
-    if ($trim -match '^  disk:\s*["'']?([^"''#]+)') { $spec.disk = $Matches[1].Trim() }
+    if ($trim -match '^  name:\s*["'']?([^"''#]+)') { $spec['vm_name'] = $Matches[1].Trim() }
+    if ($trim -match '^  memory:\s*["'']?([^"''#]+)') { $spec['memory'] = $Matches[1].Trim() }
+    if ($trim -match '^  cpus:\s*(\d+)') { $spec['cpus'] = [int]$Matches[1] }
+    if ($trim -match '^  disk:\s*["'']?([^"''#]+)') { $spec['disk'] = $Matches[1].Trim() }
     if ($trim -match '^tailscale:') { $inTailscale = $true; continue }
-    if ($inTailscale -and $trim -match '^\s*auth_key:\s*["'']?([^"''#]+)') { $spec.tailscale_key = $Matches[1].Trim(); $inTailscale = $false }
-    if ($trim -match '^\s*file:\s*["'']?([^"''#]+)') { $spec.secrets_file = $Matches[1].Trim() }
+    if ($inTailscale -and $trim -match '^\s*auth_key:\s*["'']?([^"''#]+)') { $spec['tailscale_key'] = $Matches[1].Trim(); $inTailscale = $false }
+    if ($trim -match '^\s*file:\s*["'']?([^"''#]+)') { $spec['secrets_file'] = $Matches[1].Trim() }
 }
 
 # Store raw config lines for later JSON merging if user put a full block
-$spec.openclaw_config_raw = ($openclawConfigLines -join "`n").Trim()
+$spec['openclaw_config_raw'] = ($openclawConfigLines -join "`n").Trim()
 
-if (-not $spec.vm_name) { $spec.vm_name = "openclaw" }
-if (-not $spec.memory)  { $spec.memory = "8G" }
-if (-not $spec.cpus)    { $spec.cpus = 2 }
-if (-not $spec.disk)    { $spec.disk = "30G" }
-if (-not $spec.openclaw_channel) { $spec.openclaw_channel = "stable" }
+if (-not $spec['vm_name']) { $spec['vm_name'] = "openclaw" }
+if (-not $spec['memory'])  { $spec['memory'] = "8G" }
+if (-not $spec['cpus'])    { $spec['cpus'] = 2 }
+if (-not $spec['disk'])    { $spec['disk'] = "30G" }
+if (-not $spec['openclaw_channel']) { $spec['openclaw_channel'] = "stable" }
 
-# Apply CLI overrides
-if ($Memory) { $spec.memory = $Memory }
-if ($Cpus)   { $spec.cpus = $Cpus }
-if ($Name)   { $spec.vm_name = $Name }
+# Apply CLI overrides (index syntax for strict mode safety)
+if ($Memory) { $spec['memory'] = $Memory }
+if ($Cpus)   { $spec['cpus']   = $Cpus }
+if ($Name)   { $spec['vm_name'] = $Name }
 
 Write-Info "Using spec: $Spec"
-Write-Info "VM: $($spec.vm_name) | Memory: $($spec.memory) | CPUs: $($spec.cpus) | Disk: $($spec.disk)"
+Write-Info "VM: $($spec['vm_name']) | Memory: $($spec['memory']) | CPUs: $($spec['cpus']) | Disk: $($spec['disk'])"
 
 # --- Generate strong gateway token ------------------------------------------------
 $gatewayToken = [Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 }))
@@ -114,9 +128,9 @@ Write-Info "Generated strong gateway token (will be injected into the VM only)."
 
 # --- Load optional secrets file ---------------------------------------------------
 $secrets = @{}
-if ($spec.secrets_file -and (Test-Path $spec.secrets_file)) {
-    Write-Info "Loading secrets from $($spec.secrets_file)"
-    $secretsContent = Get-Content $spec.secrets_file -Raw
+if ($spec['secrets_file'] -and (Test-Path $spec['secrets_file'])) {
+    Write-Info "Loading secrets from $($spec['secrets_file'])"
+    $secretsContent = Get-Content $spec['secrets_file'] -Raw
     # Again, naive extraction for common keys (expand as needed)
     foreach ($line in ($secretsContent -split "`n")) {
         if ($line -match '^\s*([A-Z_]+_API_KEY|[A-Z_]+_TOKEN)\s*:\s*["'']?([^"''#]+)') {
@@ -164,7 +178,7 @@ $baseConfig = @{
 }
 
 # Merge user-provided openclaw.config from the spec (naive but effective for this use case)
-if ($spec.openclaw_config_raw) {
+if ($spec['openclaw_config_raw']) {
     # For a more robust merge in v2 we could use a YAML parser.
     # For now we document that users put the keys they want under openclaw.config
     # and we keep the strong defaults + token. Users can edit inside the VM after first boot.
@@ -179,15 +193,11 @@ if ($secrets.Count -gt 0) {
     $secretEnvLines = ($secrets.GetEnumerator() | ForEach-Object { "      Environment=$($_.Key)=$($_.Value)" }) -join "`n"
 }
 
-# Tailscale block (injected into runcmd)
-$tailscaleBlock = ""
-if ($spec.tailscale_key) {
-    $tailscaleBlock = @"
-  - curl -fsSL https://tailscale.com/install.sh | sh
-  - tailscale up --authkey=$($spec.tailscale_key) --hostname=$($spec.vm_name) --accept-dns=true --accept-routes=true || true
-"@
+# Tailscale block (injected into runcmd as plain text with newlines)
+$tailscaleBlock = if ($spec['tailscale_key']) {
+    "  - curl -fsSL https://tailscale.com/install.sh | sh`n  - tailscale up --authkey=$($spec['tailscale_key']) --hostname=$($spec['vm_name']) --accept-dns=true --accept-routes=true || true"
 } else {
-    $tailscaleBlock = "  # Tailscale not configured in spec"
+    "  # Tailscale not configured in spec"
 }
 
 # --- Clean cloud-init template with placeholders (easy to maintain) ----------------
@@ -314,17 +324,12 @@ $cloudInit = $cloudInitTemplate `
     -replace '__SECRET_ENV_LINES__', $secretEnvLines `
     -replace '__OPENCLAW_CONFIG_JSON__', ($openclawJson -replace '"', '\"' -replace "`n", "`n      ") `
     -replace '__TAILSCALE_BLOCK__', $tailscaleBlock `
-    -replace '__VM_NAME__', $spec.vm_name
+    -replace '__VM_NAME__', $spec['vm_name']
 
-# Write for inspection
-$ciPath = Join-Path $env:TEMP "openclaw-cloud-init-$($spec.vm_name).yaml"
+# Write for inspection / re-use (deduped)
+$ciPath = Join-Path $env:TEMP "openclaw-cloud-init-$($spec['vm_name']).yaml"
 $cloudInit | Out-File -FilePath $ciPath -Encoding utf8
-Write-Info "Cloud-init written to $ciPath (inspect if you want)"
-
-# Write the generated cloud-init for inspection / re-use
-$ciPath = Join-Path $env:TEMP "openclaw-cloud-init-$($spec.vm_name).yaml"
-$cloudInit | Out-File -FilePath $ciPath -Encoding utf8
-Write-Info "Cloud-init written to $ciPath (you can inspect or reuse it)"
+Write-Info "Cloud-init written to $ciPath (inspect or reuse if needed)"
 
 # --- Check Multipass --------------------------------------------------------------
 if (-not (Get-Command multipass -ErrorAction SilentlyContinue)) {
@@ -337,10 +342,10 @@ Write-Info "Launching Multipass VM (this can take a couple of minutes)..."
 
 $launchArgs = @(
     "launch",
-    "--name", $spec.vm_name,
-    "--memory", $spec.memory,
-    "--cpus", $spec.cpus,
-    "--disk", $spec.disk,
+    "--name", $spec['vm_name'],
+    "--memory", $spec['memory'],
+    "--cpus", $spec['cpus'],
+    "--disk", $spec['disk'],
     "--cloud-init", $ciPath,
     "ubuntu"
 )
@@ -355,8 +360,8 @@ if ($LASTEXITCODE -ne 0) {
 Write-Info "VM launched successfully."
 Write-Host ""
 Write-Host "Next commands:" -ForegroundColor Green
-Write-Host "  multipass shell $($spec.vm_name)"
-Write-Host "  multipass info $($spec.vm_name)"
+Write-Host "  multipass shell $($spec['vm_name'])"
+Write-Host "  multipass info $($spec['vm_name'])"
 Write-Host ""
 Write-Host "Inside the VM (as dedicated user):" -ForegroundColor Green
 Write-Host "  sudo -u openclaw openclaw gateway status"
