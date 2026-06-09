@@ -308,22 +308,24 @@ runcmd:
   - ln -sf /home/openclaw/.openclaw/bin/openclaw /usr/local/bin/openclaw || true
 
   # Pre-build sandbox images (critical for browser tools)
-  - sudo -u openclaw bash -c 'docker build -t openclaw-sandbox:bookworm-slim - << "DOCKERFILE"
-FROM debian:bookworm-slim
-ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y --no-install-recommends bash ca-certificates curl git jq python3 ripgrep && rm -rf /var/lib/apt/lists/*
-RUN useradd --create-home --shell /bin/bash sandbox
-USER sandbox
-WORKDIR /home/sandbox
-CMD ["sleep", "infinity"]
-DOCKERFILE'
+  - |
+    sudo -u openclaw bash -c 'docker build -t openclaw-sandbox:bookworm-slim - << "DOCKERFILE"
+    FROM debian:bookworm-slim
+    ENV DEBIAN_FRONTEND=noninteractive
+    RUN apt-get update && apt-get install -y --no-install-recommends bash ca-certificates curl git jq python3 ripgrep && rm -rf /var/lib/apt/lists/*
+    RUN useradd --create-home --shell /bin/bash sandbox
+    USER sandbox
+    WORKDIR /home/sandbox
+    CMD ["sleep", "infinity"]
+    DOCKERFILE'
 
-  - sudo -u openclaw bash -c 'docker build -t openclaw-sandbox-browser:bookworm-slim - << "DOCKERFILE"
-FROM mcr.microsoft.com/playwright:v1.44.0-jammy
-RUN apt-get update && apt-get install -y --no-install-recommends tini && rm -rf /var/lib/apt/lists/*
-ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["sleep", "infinity"]
-DOCKERFILE'
+  - |
+    sudo -u openclaw bash -c 'docker build -t openclaw-sandbox-browser:bookworm-slim - << "DOCKERFILE"
+    FROM mcr.microsoft.com/playwright:v1.44.0-jammy
+    RUN apt-get update && apt-get install -y --no-install-recommends tini && rm -rf /var/lib/apt/lists/*
+    ENTRYPOINT ["/usr/bin/tini", "--"]
+    CMD ["sleep", "infinity"]
+    DOCKERFILE'
 
   - chown -R openclaw:openclaw /home/openclaw || true
 
