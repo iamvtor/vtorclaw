@@ -134,7 +134,7 @@ if (-not $specData -or $specData -isnot [hashtable]) {
 }
 
 Write-Info "Using spec: $Spec"
-Write-Info "VM: $($specData['vm_name']) | Image: ubuntu:$($specData['ubuntu']) | Memory: $($specData['memory']) | CPUs: $($specData['cpus']) | Disk: $($specData['disk'])"
+Write-Info "VM: $($specData['vm_name']) | Image: $($specData['ubuntu']) | Memory: $($specData['memory']) | CPUs: $($specData['cpus']) | Disk: $($specData['disk'])"
 
 # --- Generate strong gateway token ------------------------------------------------
 $gatewayToken = [Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 }))
@@ -384,7 +384,7 @@ if (-not (Get-Command multipass -ErrorAction SilentlyContinue)) {
 # that downloads the catalog and registers the official remotes. This keeps things
 # as close to zero-touch as possible.
 Write-Info "Ensuring Multipass image catalog is populated (one-time on fresh installs)..."
-& multipass find | Out-Null
+& multipass find >$null 2>&1
 
 # --- Launch -----------------------------------------------------------------------
 Write-Info "Launching Multipass VM (this can take a couple of minutes)..."
@@ -396,7 +396,7 @@ $launchArgs = @(
     "--cpus", $specData['cpus'],
     "--disk", $specData['disk'],
     "--cloud-init", $ciPath,
-    "ubuntu:$($specData['ubuntu'])"
+    $specData['ubuntu']
 )
 
 & multipass $launchArgs
