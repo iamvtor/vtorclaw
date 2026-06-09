@@ -201,6 +201,9 @@ $baseConfig = @{
             }
         }
     }
+    agent = @{
+        model = "google/gemini-2.0-flash"
+    }
 }
 
 # User openclaw.config block (from the spec) is captured for future richer merging.
