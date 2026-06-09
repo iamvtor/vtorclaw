@@ -34,6 +34,12 @@ This sits between "pure Docker gateway in VM" and "pure native with offloaded sa
    winget install --id Canonical.Multipass -e
    ```
 
+   On a completely fresh Multipass installation, run this once (any shell) to fetch the image catalog and register the official remotes:
+   ```powershell
+   multipass find
+   ```
+   (You only need to do this the very first time; subsequent launches will work without it.)
+
 2. Copy the example spec + secrets template and edit them:
    ```powershell
    Copy-Item vtorclaw.example.yaml vtorclaw.yaml

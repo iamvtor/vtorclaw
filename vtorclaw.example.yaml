@@ -8,7 +8,10 @@ vm:
   memory: "8G"
   cpus: 2
   disk: "30G"
-  # Ubuntu release used by Multipass
+  # Ubuntu release (or full image alias) used by Multipass.
+  # On a fresh Multipass install you usually need to run `multipass find` once
+  # (in any shell) before the first launch so it can discover the "ubuntu" remote
+  # and available images.
   ubuntu: "24.04"
 
 openclaw:
