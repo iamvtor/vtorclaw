@@ -102,30 +102,32 @@ echo "+ sudo -u openclaw bash -l -c 'corepack prepare ...; export PATH=...; pnpm
 # The /usr/local/bin link is done as root afterwards (sudo -u cannot write there).
 echo "Running discovery and force-linking..."
 # In real: write a /tmp script (avoids quote hell in the big YAML | block), then run it.
+# The heredoc content below is indented with 4 spaces to match the surrounding shell code
+# in the big block scalar (consistent indent prevents yaml-cpp "end of map not found").
 cat > /tmp/openclaw-link.sh << 'LINKSCRIPT'
-# (simplified for test payload)
-set -e
-mkdir -p /home/openclaw/.openclaw/bin
-CANDIDATE="/home/openclaw/.openclaw/bin/openclaw"
-if [ ! -x "$CANDIDATE" ]; then
-  FOUND=$(find /home/openclaw -type f \( -name openclaw -o -path "*bin/openclaw" -o -path "*\.bin/openclaw" \) 2>/dev/null | head -5 || true)
-  for f in $FOUND; do
-    if [ -f "$f" ]; then
-      chmod +x "$f" 2>/dev/null || true
-      touch "$CANDIDATE"
-      chmod +x "$CANDIDATE"
-      chown openclaw:openclaw "$CANDIDATE" || true
-      echo "  created stable launcher at $CANDIDATE (sim)"
-      break
+    # (simplified for test payload)
+    set -e
+    mkdir -p /home/openclaw/.openclaw/bin
+    CANDIDATE="/home/openclaw/.openclaw/bin/openclaw"
+    if [ ! -x "$CANDIDATE" ]; then
+      FOUND=$(find /home/openclaw -type f \( -name openclaw -o -path "*bin/openclaw" -o -path "*\.bin/openclaw" \) 2>/dev/null | head -5 || true)
+      for f in $FOUND; do
+        if [ -f "$f" ]; then
+          chmod +x "$f" 2>/dev/null || true
+          touch "$CANDIDATE"
+          chmod +x "$CANDIDATE"
+          chown openclaw:openclaw "$CANDIDATE" || true
+          echo "  created stable launcher at $CANDIDATE (sim)"
+          break
+        fi
+      done
     fi
-  done
-fi
-if [ -x "$CANDIDATE" ]; then
-  echo "  user-home link ready at $CANDIDATE"
-else
-  echo "FATAL: no executable openclaw found after install step (user home)."
-fi
-LINKSCRIPT
+    if [ -x "$CANDIDATE" ]; then
+      echo "  user-home link ready at $CANDIDATE"
+    else
+      echo "FATAL: no executable openclaw found after install step (user home)."
+    fi
+    LINKSCRIPT
 chmod +x /tmp/openclaw-link.sh
 /tmp/openclaw-link.sh || echo "User-home linking script exited non-zero (non-fatal)"
 
