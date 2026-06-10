@@ -359,7 +359,7 @@ runcmd:
       for f in ~/.bashrc ~/.profile; do
         if [ -f "$f" ] || [ ! -e "$f" ]; then
           grep -q "export PATH=/usr/local/bin:\$PATH" "$f" 2>/dev/null || echo "export PATH=/usr/local/bin:\$PATH" >> "$f"
-          grep -q 'pnpm/bin' "$f" 2>/dev/null || echo 'export PATH="$HOME/.local/share/pnpm/bin:$PATH"' >> "$f"
+          grep -q "pnpm/bin" "$f" 2>/dev/null || echo "export PATH=\"\$HOME/.local/share/pnpm/bin:\$PATH\"" >> "$f"
         fi
       done
     ' || true
