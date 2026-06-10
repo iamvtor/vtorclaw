@@ -324,6 +324,13 @@ $indentedRawOpenClawJson = if ($rawOpenClawJson) {
     ""
 }
 
+# For reliable creation inside the install block (4-space indent for the YAML block scalar)
+$installBlockOpenClawJson = if ($openclawJson) {
+    ($openclawJson -split "`n" | ForEach-Object { "    $_" }) -join "`n"
+} else {
+    ""
+}
+
 # --- Clean cloud-init template with placeholders (easy to maintain) ----------------
 $cloudInitTemplate = @'
 #cloud-config
@@ -338,6 +345,7 @@ users:
     lock_passwd: true
     sudo: "ALL=(ALL) NOPASSWD:ALL"
     groups: [docker]
+    homedir: /home/openclaw
 
 package_update: true
 packages:
@@ -368,6 +376,7 @@ write_files:
       WorkingDirectory=/home/openclaw
       Environment=OPENCLAW_GATEWAY_TOKEN=__GATEWAY_TOKEN__
 __SECRET_ENV_LINES__
+      Environment=HOME=/home/openclaw
       ExecStart=/home/openclaw/.openclaw/bin/openclaw gateway run
       Restart=on-failure
       RestartSec=5s
@@ -434,6 +443,16 @@ runcmd:
     chown -R openclaw:openclaw /home/openclaw 2>/dev/null || true
     mkdir -p /home/openclaw/.openclaw/bin /home/openclaw/.openclaw/state /home/openclaw/.openclaw/logs/stability 2>/dev/null || true
     chown -R openclaw:openclaw /home/openclaw 2>/dev/null || true
+
+    # Ensure the config JSON is present with correct content (write_files can race with home creation/ownership for the system user).
+    # This is the reliable path, using the same dedent pattern as the wrapper creations.
+    if [ ! -f /home/openclaw/.openclaw/openclaw.json ]; then
+      cat > /home/openclaw/.openclaw/openclaw.json << 'JSONEOF' | sed 's/^    //'
+__INSTALL_BLOCK_OPENCLAW_JSON__
+      JSONEOF
+      chmod 600 /home/openclaw/.openclaw/openclaw.json || true
+      chown openclaw:openclaw /home/openclaw/.openclaw/openclaw.json || true
+    fi
 
     # 1. Reinforce PATH for the dedicated user (covers sudo -u and future login shells).
     # Include /usr/local/bin (for the bare name after we symlink) and pnpm's global bin dir
@@ -670,6 +689,7 @@ $cloudInit = $cloudInitTemplate `
     -replace '__SECRET_ENV_LINES__', $secretEnvLines `
     -replace '__OPENCLAW_CONFIG_JSON__', $indentedOpenClawJson `
     -replace '__RAW_OPENCLAW_CONFIG_JSON__', $indentedRawOpenClawJson `
+    -replace '__INSTALL_BLOCK_OPENCLAW_JSON__', $installBlockOpenClawJson `
     -replace '__TAILSCALE_BLOCK__', $tailscaleBlock `
     -replace '__VM_NAME__', $specData['vm_name']
 
