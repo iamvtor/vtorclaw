@@ -320,8 +320,20 @@ runcmd:
   - test -x /home/openclaw/.openclaw/bin/openclaw || (echo "ERROR: openclaw binary missing after install step" ; ls -l /home/openclaw/.openclaw/bin/ || true ; cat /tmp/openclaw-install.log | tail -30 || true)
   - test -L /usr/local/bin/openclaw && test -x /usr/local/bin/openclaw || (echo "ERROR: /usr/local/bin/openclaw symlink missing or broken" ; ls -l /usr/local/bin/openclaw || true)
 
-  # Fallback to ensure binary exists if the primary install script didn't (direct npm install to the expected prefix)
-  - sudo -u openclaw [ -x /home/openclaw/.openclaw/bin/openclaw ] || (echo "Primary install did not produce binary, trying direct npm fallback"; sudo -u openclaw bash -l -c 'npm install -g openclaw --prefix /home/openclaw/.openclaw 2>&1 | tail -5' || true ; ln -sf /home/openclaw/.openclaw/bin/openclaw /usr/local/bin/openclaw || true)
+  # Robust post-install linking: the install script may place the 'openclaw' binary in node_modules/.bin or elsewhere.
+  # Find it and ensure it's at the locations expected by the service (/home/openclaw/.openclaw/bin) and for PATH (/usr/local/bin).
+  # This guarantees the bare 'openclaw' command works for sudo -u openclaw (via /usr/local/bin in secure_path) and the service can start.
+  - sudo -u openclaw bash -c '
+      mkdir -p /home/openclaw/.openclaw/bin
+      BIN=$(find /home/openclaw -name openclaw -type f 2>/dev/null | head -1)
+      if [ -n "$BIN" ]; then
+        ln -sf "$BIN" /home/openclaw/.openclaw/bin/openclaw
+        ln -sf "$BIN" /usr/local/bin/openclaw
+        echo "Linked openclaw binary from $BIN to expected locations"
+      else
+        echo "ERROR: no openclaw binary found anywhere after install"
+      fi
+    ' || true
 
   # Pre-build sandbox images (critical for browser tools)
   - |
