@@ -156,13 +156,37 @@ if ($specData['secrets_file'] -and (Test-Path $specData['secrets_file'])) {
 }
 
 # --- Build secure openclaw.json from declarative spec + best-practice defaults ---
+# The shape here is aligned with the official config reference for the openclaw
+# package (pnpm add -g openclaw) so that `gateway run` (the subcommand our system
+# unit executes) accepts the file as a properly configured local gateway and does
+# not hit the "Missing config / resolving authentication" guard (status 78/CONFIG).
+# See docs.openclaw.ai/gateway/configuration-reference and the CLI "gateway" page:
+# the binary refuses to start `gateway run` unless gateway.mode=local is present
+# (and the surrounding auth/controlUi/etc. shape looks like a completed local setup).
+# We also guarantee a strong per-launch token and the google env provider.
 $baseConfig = @{
     gateway = @{
         mode = "local"
+        port = 18789
         bind = "loopback"
         auth = @{
             mode = "token"
             token = $gatewayToken
+            allowTailscale = $true
+            rateLimit = @{
+                maxAttempts = 10
+                windowMs = 60000
+                lockoutMs = 300000
+                exemptLoopback = $true
+            }
+        }
+        tailscale = @{
+            mode = "off"
+            resetOnExit = $false
+        }
+        controlUi = @{
+            enabled = $true
+            basePath = "/openclaw"
         }
     }
     session = @{
@@ -170,6 +194,7 @@ $baseConfig = @{
     }
     agents = @{
         defaults = @{
+            model = "google/gemini-2.0-flash"
             sandbox = @{
                 mode = "non-main"
                 backend = "docker"
@@ -190,8 +215,8 @@ $baseConfig = @{
         whatsapp = @{ dmPolicy = "pairing" }
     }
     # Direct google provider support for free-tier key (injected via secrets Environment).
-    # User can override/extend in their openclaw.config block (future merge improvement)
-    # or after launch. xAI is expected to be added via native OAuth post-boot.
+    # User openclaw.config block (from spec) can override/extend other sections.
+    # xAI is expected to be added via native OAuth post-boot inside the VM.
     models = @{
         providers = @{
             google = @{
@@ -203,18 +228,62 @@ $baseConfig = @{
             }
         }
     }
-    agent = @{
-        model = "google/gemini-2.0-flash"
+}
+
+# User openclaw.config block (the text under openclaw.config: in the spec) is now
+# given a best-effort merge: if it parses as a JSON object we take top-level keys
+# from it (except gateway, which we always force to our secured local+token shape
+# so the pnpm-installed binary's guard for `gateway run` is satisfied).
+# This makes the declarative spec actually control channels, models, agents etc.
+# while the launcher still owns the security-critical gateway bits and the token.
+if ($specData['openclaw_config_raw']) {
+    try {
+        $overlay = $specData['openclaw_config_raw'] | ConvertFrom-Json -ErrorAction Stop
+        foreach ($k in $overlay.PSObject.Properties.Name) {
+            if ($k -eq 'gateway') { continue }
+            if ($k -eq 'agent') {
+                # Remap singular "agent" (from example specs) into agents.defaults.model
+                # so the schema for 2026.6.x accepts it (top-level "agent" is unrecognized).
+                if ($overlay.agent.model) {
+                    if (-not $baseConfig.ContainsKey('agents')) { $baseConfig['agents'] = @{} }
+                    if (-not $baseConfig.agents.ContainsKey('defaults')) { $baseConfig.agents['defaults'] = @{} }
+                    $baseConfig.agents.defaults['model'] = $overlay.agent.model
+                }
+                continue
+            }
+            $baseConfig[$k] = $overlay.$k
+        }
+        Write-Info "Merged user openclaw.config block from spec (top-level keys except gateway; remapped singular agent if present)."
+    } catch {
+        Write-Warn "User openclaw.config block in spec was not valid JSON and could not be merged (it is still written as a comment in the TEMP cloud-init for review). Use JSON syntax under the config: block or edit ~/.openclaw/openclaw.json after launch."
     }
 }
 
-# User openclaw.config block (from the spec) is captured for future richer merging.
-# Today the launcher guarantees the critical security defaults + gateway token + a
-# working google provider (for your free-tier GOOGLE_API_KEY from secrets).
-# xAI is added via the post-launch `openclaw models auth login --provider xai --method oauth`.
-# You can always edit /home/openclaw/.openclaw/openclaw.json as the openclaw user after boot.
-if ($specData['openclaw_config_raw']) {
-    Write-Info "User openclaw.config block detected in spec (will be available for manual review/merge inside the VM)."
+# Always (re)apply the secured gateway section last so our token + documented
+# local shape wins even if the user tried to supply a gateway stanza.
+$baseConfig['gateway'] = @{
+    mode = "local"
+    port = 18789
+    bind = "loopback"
+    auth = @{
+        mode = "token"
+        token = $gatewayToken
+        allowTailscale = $true
+        rateLimit = @{
+            maxAttempts = 10
+            windowMs = 60000
+            lockoutMs = 300000
+            exemptLoopback = $true
+        }
+    }
+    tailscale = @{
+        mode = "off"
+        resetOnExit = $false
+    }
+    controlUi = @{
+        enabled = $true
+        basePath = "/openclaw"
+    }
 }
 
 $openclawJson = $baseConfig | ConvertTo-Json -Depth 10
@@ -239,6 +308,10 @@ $indentedOpenClawJson = if ($openclawJson) {
 } else {
     ""
 }
+
+# Raw (no extra indent) version for use inside shell heredocs in the runcmd
+# (e.g. the defensive re-write of the config as the dedicated user).
+$rawOpenClawJson = $openclawJson
 
 # --- Clean cloud-init template with placeholders (easy to maintain) ----------------
 $cloudInitTemplate = @'
@@ -284,13 +357,14 @@ write_files:
       WorkingDirectory=/home/openclaw
       Environment=OPENCLAW_GATEWAY_TOKEN=__GATEWAY_TOKEN__
 __SECRET_ENV_LINES__
-      ExecStart=/home/openclaw/.openclaw/bin/openclaw gateway run --allow-unconfigured
+      ExecStart=/home/openclaw/.openclaw/bin/openclaw gateway run
       Restart=on-failure
       RestartSec=5s
 
       # Best-practice hardening for a tool-using agent service
       ProtectSystem=strict
       ProtectHome=read-only
+      ReadWritePaths=/home/openclaw/.openclaw
       PrivateTmp=true
       NoNewPrivileges=true
 
@@ -347,7 +421,7 @@ runcmd:
     # appending to .bashrc/.profile, etc.). This defeats the common cloud-init + system-user
     # timing/ownership race.
     chown -R openclaw:openclaw /home/openclaw 2>/dev/null || true
-    mkdir -p /home/openclaw/.openclaw/bin 2>/dev/null || true
+    mkdir -p /home/openclaw/.openclaw/bin /home/openclaw/.openclaw/state /home/openclaw/.openclaw/logs/stability 2>/dev/null || true
     chown -R openclaw:openclaw /home/openclaw 2>/dev/null || true
 
     # 1. Reinforce PATH for the dedicated user (covers sudo -u and future login shells).
@@ -494,12 +568,65 @@ runcmd:
   - sudo -u openclaw systemctl --user disable --now openclaw-gateway.service openclaw.service 2>/dev/null || true
   - systemctl daemon-reload
 
+  # Adopt the pre-written declarative config using the binary itself.
+  # This makes `sudo -u openclaw openclaw status --all` and `gateway status` report
+  # "Config (cli)" / "Config (service)" as present (instead of "(missing)") and
+  # improves the local connectivity probe. We also export the gateway token into
+  # the openclaw user's shell rc files so interactive CLI use can authenticate
+  # locally without extra flags.
+  # We also defensively re-write the config file from the authoritative declarative
+  # content (in case write_files timing/ownership for the system user left it
+  # missing or clobbered during the long pnpm + docker steps).
+  - |
+    sudo -u openclaw bash -l -c '
+      set -x
+      export PATH="$HOME/.local/share/pnpm/bin:$PATH"
+      mkdir -p ~/.openclaw
+      # Re-ensure the declarative json is present (the cloud-init write_files
+      # target; we re-create it here as the user so it is guaranteed for doctor/cli).
+      cat > ~/.openclaw/openclaw.json << '"'"'OPENCLAWJSON'"'"'
+__RAW_OPENCLAW_CONFIG_JSON__
+OPENCLAWJSON
+      chmod 600 ~/.openclaw/openclaw.json
+      chown openclaw:openclaw ~/.openclaw/openclaw.json || true
+      echo "=== declarative config file (sanitized) ==="
+      jq "if .gateway and .gateway.auth then .gateway.auth.token = \"REDACTED\" else . end" ~/.openclaw/openclaw.json 2>/dev/null || cat ~/.openclaw/openclaw.json
+      echo "=== openclaw config validate ==="
+      openclaw config validate 2>&1 || true
+      echo "=== openclaw doctor --fix (adopt the declarative config for CLI view) ==="
+      openclaw doctor --fix 2>&1 | tail -15 || true
+      # Idempotent sets for the fields the binary cares about for local gateway
+      openclaw config set gateway.mode local 2>&1 || true
+      openclaw config set gateway.bind loopback 2>&1 || true
+      # Export token for the user'\''s interactive shells (CLI probes can use it)
+      TOKEN=$(jq -r ".gateway.auth.token // empty" ~/.openclaw/openclaw.json 2>/dev/null)
+      if [ -n "$TOKEN" ]; then
+        for rc in ~/.profile ~/.bashrc; do
+          if [ -f "$rc" ] || [ ! -e "$rc" ]; then
+            grep -q "OPENCLAW_GATEWAY_TOKEN" "$rc" 2>/dev/null || echo "export OPENCLAW_GATEWAY_TOKEN=\"$TOKEN\"" >> "$rc"
+          fi
+        done
+        echo "exported OPENCLAW_GATEWAY_TOKEN to user rc files"
+      fi
+      # After the user-side adoption (json re-write + doctor --fix + token export),
+      # restart the system service so it picks up the final declarative config.
+      # This ensures the gateway process is running under our hardened unit
+      # with a schema-valid config for this pnpm-installed version.
+      systemctl restart openclaw-gateway.service || true
+      echo "Restarted system openclaw-gateway.service after config adoption"
+    ' || true
+  - systemctl daemon-reload
+
 __TAILSCALE_BLOCK__
 
   # Best-effort health check (exercises the /usr/local/bin symlink + the PATH we set up).
   # On any failure, dump the install log so the full transcript is in cloud-init-output.log.
   - sleep 8
   - sudo -u openclaw /usr/local/bin/openclaw gateway status || (echo "Gateway status probe failed or still starting"; cat /tmp/openclaw-install.log | tail -40 || true)
+  # Also show the system unit status (the real one we manage) so the cloud-init log
+  # and final_message have clear evidence the hardened system service is up.
+  - sudo systemctl status openclaw-gateway.service --no-pager -l | tail -15 || true
+  - ss -tlnp | grep 18789 || echo "Port 18789 not yet listening (may still be starting)" || true
 
 final_message: |
   🦞 OpenClaw VM is ready (or starting).
@@ -528,6 +655,7 @@ $cloudInit = $cloudInitTemplate `
     -replace '__GATEWAY_TOKEN__', $gatewayToken `
     -replace '__SECRET_ENV_LINES__', $secretEnvLines `
     -replace '__OPENCLAW_CONFIG_JSON__', $indentedOpenClawJson `
+    -replace '__RAW_OPENCLAW_CONFIG_JSON__', $rawOpenClawJson `
     -replace '__TAILSCALE_BLOCK__', $tailscaleBlock `
     -replace '__VM_NAME__', $specData['vm_name']
 
