@@ -306,9 +306,12 @@ runcmd:
   - systemctl enable --now docker
   - usermod -aG docker openclaw
 
+  # Make the openclaw CLI available in PATH for the dedicated user early (for sudo -u openclaw openclaw ... and any direct use)
+  - sudo -u openclaw bash -c 'echo "export PATH=/usr/local/bin:\$PATH" >> ~/.bashrc && echo "export PATH=/usr/local/bin:\$PATH" >> ~/.profile'
+
   # Native install as the dedicated user (best practice)
   # Capture output to /tmp for debugging (the external script has occasionally not produced the expected binary)
-  - sudo -u openclaw bash -c 'curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-onboard --install-method npm' > /tmp/openclaw-install.log 2>&1 || echo "OPENCLAW NPM INSTALL FAILED (exit $?) - see /tmp/openclaw-install.log"
+  - sudo -u openclaw bash -l -c 'curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-onboard --install-method npm' > /tmp/openclaw-install.log 2>&1 || echo "OPENCLAW NPM INSTALL FAILED (exit $?) - see /tmp/openclaw-install.log"
   - cat /tmp/openclaw-install.log | tail -20 || true
 
   - ln -sf /home/openclaw/.openclaw/bin/openclaw /usr/local/bin/openclaw || true
@@ -316,9 +319,6 @@ runcmd:
   # Post-install verification (prints clear errors + install log tail to cloud-init log if the binary is missing)
   - test -x /home/openclaw/.openclaw/bin/openclaw || (echo "ERROR: openclaw binary missing after install step" ; ls -l /home/openclaw/.openclaw/bin/ || true ; cat /tmp/openclaw-install.log | tail -30 || true)
   - test -L /usr/local/bin/openclaw && test -x /usr/local/bin/openclaw || (echo "ERROR: /usr/local/bin/openclaw symlink missing or broken" ; ls -l /usr/local/bin/openclaw || true)
-
-  # Make the openclaw CLI available in PATH for the dedicated user (for sudo -u openclaw openclaw ... and any direct use)
-  - sudo -u openclaw bash -c 'echo "export PATH=/usr/local/bin:\$PATH" >> ~/.bashrc && echo "export PATH=/usr/local/bin:\$PATH" >> ~/.profile'
 
   # Pre-build sandbox images (critical for browser tools)
   - |
