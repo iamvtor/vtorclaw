@@ -397,6 +397,41 @@ __SECRET_ENV_LINES__
     content: |
 __OPENCLAW_CONFIG_JSON__
 
+  - path: /tmp/adopt-openclaw-config.sh
+    owner: root:root
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -x
+      export PATH="$HOME/.local/share/pnpm/bin:$PATH"
+      mkdir -p ~/.openclaw
+      if [ -f ~/.openclaw/openclaw.json ]; then
+        chmod 600 ~/.openclaw/openclaw.json || true
+        chown openclaw:openclaw ~/.openclaw/openclaw.json || true
+        echo "=== declarative config file (sanitized) ==="
+        jq "if .gateway and .gateway.auth then .gateway.auth.token = \"REDACTED\" else . end" ~/.openclaw/openclaw.json 2>/dev/null || cat ~/.openclaw/openclaw.json
+        echo "size: $(wc -c < ~/.openclaw/openclaw.json) bytes"
+      else
+        echo "WARNING: ~/.openclaw/openclaw.json not present after write_files + early chowns"
+      fi
+      echo "=== openclaw config validate ==="
+      openclaw config validate 2>&1 || true
+      echo "=== openclaw doctor --fix (adopt the declarative config for CLI view) ==="
+      openclaw doctor --fix 2>&1 | tail -15 || true
+      openclaw config set gateway.mode local 2>&1 || true
+      openclaw config set gateway.bind loopback 2>&1 || true
+      TOKEN=$(jq -r ".gateway.auth.token // empty" ~/.openclaw/openclaw.json 2>/dev/null)
+      if [ -n "$TOKEN" ]; then
+        for rc in ~/.profile ~/.bashrc; do
+          if [ -f "$rc" ] || [ ! -e "$rc" ]; then
+            grep -q "OPENCLAW_GATEWAY_TOKEN" "$rc" 2>/dev/null || echo "export OPENCLAW_GATEWAY_TOKEN=\"$TOKEN\"" >> "$rc"
+          fi
+        done
+        echo "exported OPENCLAW_GATEWAY_TOKEN to user rc files"
+      fi
+      systemctl restart openclaw-gateway.service || true
+      echo "Restarted system openclaw-gateway.service after config adoption"
+
 runcmd:
   - systemctl enable --now docker
   - usermod -aG docker openclaw
@@ -604,43 +639,8 @@ __INSTALL_BLOCK_OPENCLAW_JSON__
   # improves the local connectivity probe. We also export the gateway token into
   # the openclaw user's shell rc files so interactive CLI use can authenticate
   # locally without extra flags.
-  # We extract the logic to a temp script using heredoc + sed dedent (consistent with
-  # wrapper creations) to avoid quoting/indent hell inside the YAML - | block and the
-  # bash -c string, which was causing syntax errors and broken execution.
-  - |
-    cat > /tmp/adopt-openclaw-config.sh << 'ADOPTSCRIPT' | sed 's/^[[:space:]]*//'
-    #!/bin/bash
-    set -x
-    export PATH="$HOME/.local/share/pnpm/bin:$PATH"
-    mkdir -p ~/.openclaw
-    if [ -f ~/.openclaw/openclaw.json ]; then
-      chmod 600 ~/.openclaw/openclaw.json || true
-      chown openclaw:openclaw ~/.openclaw/openclaw.json || true
-      echo "=== declarative config file (sanitized) ==="
-      jq "if .gateway and .gateway.auth then .gateway.auth.token = \"REDACTED\" else . end" ~/.openclaw/openclaw.json 2>/dev/null || cat ~/.openclaw/openclaw.json
-      echo "size: $(wc -c < ~/.openclaw/openclaw.json) bytes"
-    else
-      echo "WARNING: ~/.openclaw/openclaw.json not present after write_files + early chowns"
-    fi
-    echo "=== openclaw config validate ==="
-    openclaw config validate 2>&1 || true
-    echo "=== openclaw doctor --fix (adopt the declarative config for CLI view) ==="
-    openclaw doctor --fix 2>&1 | tail -15 || true
-    openclaw config set gateway.mode local 2>&1 || true
-    openclaw config set gateway.bind loopback 2>&1 || true
-    TOKEN=$(jq -r ".gateway.auth.token // empty" ~/.openclaw/openclaw.json 2>/dev/null)
-    if [ -n "$TOKEN" ]; then
-      for rc in ~/.profile ~/.bashrc; do
-        if [ -f "$rc" ] || [ ! -e "$rc" ]; then
-          grep -q "OPENCLAW_GATEWAY_TOKEN" "$rc" 2>/dev/null || echo "export OPENCLAW_GATEWAY_TOKEN=\"$TOKEN\"" >> "$rc"
-        fi
-      done
-      echo "exported OPENCLAW_GATEWAY_TOKEN to user rc files"
-    fi
-    systemctl restart openclaw-gateway.service || true
-    echo "Restarted system openclaw-gateway.service after config adoption"
-    ADOPTSCRIPT
-    bash /tmp/adopt-openclaw-config.sh || true
+  # The script is written via write_files (early, reliable), then just executed here.
+  - bash /tmp/adopt-openclaw-config.sh || true
   - systemctl daemon-reload
 
 __TAILSCALE_BLOCK__
