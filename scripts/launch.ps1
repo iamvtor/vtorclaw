@@ -481,13 +481,12 @@ runcmd:
 
     # Ensure the config JSON is present with correct content (write_files can race with home creation/ownership for the system user).
     # This is the reliable path, using the same dedent pattern as the wrapper creations.
-    if [ ! -f /home/openclaw/.openclaw/openclaw.json ]; then
-      cat > /home/openclaw/.openclaw/openclaw.json << 'JSONEOF' | sed 's/^[[:space:]]*//'
+    # Always (re)write it here so it's guaranteed before service start.
+    cat > /home/openclaw/.openclaw/openclaw.json << 'JSONEOF' | sed 's/^[[:space:]]*//'
 __INSTALL_BLOCK_OPENCLAW_JSON__
-      JSONEOF
-      chmod 600 /home/openclaw/.openclaw/openclaw.json || true
-      chown openclaw:openclaw /home/openclaw/.openclaw/openclaw.json || true
-    fi
+    JSONEOF
+    chmod 600 /home/openclaw/.openclaw/openclaw.json || true
+    chown openclaw:openclaw /home/openclaw/.openclaw/openclaw.json || true
 
     # 1. Reinforce PATH for the dedicated user (covers sudo -u and future login shells).
     # Include /usr/local/bin (for the bare name after we symlink) and pnpm's global bin dir
