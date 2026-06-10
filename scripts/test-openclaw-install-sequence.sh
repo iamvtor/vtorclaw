@@ -77,9 +77,8 @@ echo "=== OPENCLAW INSTALL START $(date -u) ==="
 # This defeats the common cloud-init + system-user timing/ownership race (mkdir ~/.openclaw
 # and npm EACCES / Permission denied until a late chown).
 chown -R openclaw:openclaw /home/openclaw 2>/dev/null || true
-mkdir -p /home/openclaw/.openclaw/bin /home/openclaw/.npm 2>/dev/null || true
+mkdir -p /home/openclaw/.openclaw/bin 2>/dev/null || true
 chown -R openclaw:openclaw /home/openclaw 2>/dev/null || true
-rm -rf /home/openclaw/.npm/_logs 2>/dev/null || true
 
 # 1. Early PATH for the dedicated user (sudo -u + login shells + bare "openclaw" via /usr/local/bin)
 sudo -u openclaw bash -c '
@@ -96,7 +95,7 @@ echo "Running direct pnpm add -g openclaw ..."
 SIM_PNPM_RC=0
 # The following line is what the real block has; in test the "pnpm" is a no-op or we touch files below.
 # We keep the command text so the log contains the intent.
-echo "+ sudo -u openclaw bash -l -c 'pnpm add -g openclaw'  (simulated)"
+echo "+ sudo -u openclaw bash -l -c 'corepack prepare ...; export PATH=...; pnpm add -g openclaw'  (simulated)"
 
 # 3. Unconditional robust discovery + force links (core of the fix)
 # The sudo -u portion handles only the user-owned location under ~/.openclaw.

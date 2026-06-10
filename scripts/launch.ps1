@@ -314,7 +314,7 @@ runcmd:
   # We fix it as root *before* any sudo -u write attempts. The big install block below also
   # reinforces this defensively at the top of its payload.
   - chown -R openclaw:openclaw /home/openclaw || true
-  - mkdir -p /home/openclaw/.openclaw/bin /home/openclaw/.npm || true
+  - mkdir -p /home/openclaw/.openclaw/bin || true
   - chown -R openclaw:openclaw /home/openclaw || true
 
   # Install Node 24 (via NodeSource) + enable pnpm via corepack.
@@ -347,10 +347,8 @@ runcmd:
     # appending to .bashrc/.profile, etc.). This defeats the common cloud-init + system-user
     # timing/ownership race.
     chown -R openclaw:openclaw /home/openclaw 2>/dev/null || true
-    mkdir -p /home/openclaw/.openclaw/bin /home/openclaw/.npm 2>/dev/null || true
+    mkdir -p /home/openclaw/.openclaw/bin 2>/dev/null || true
     chown -R openclaw:openclaw /home/openclaw 2>/dev/null || true
-    # Clean any stale root-owned npm state from previous partial attempts (helps the "root-owned files" cache warning).
-    rm -rf /home/openclaw/.npm/_logs 2>/dev/null || true
 
     # 1. Reinforce PATH for the dedicated user (covers sudo -u and future login shells).
     # /usr/local/bin is what makes the bare "openclaw" name work after we create the symlink.
@@ -370,9 +368,16 @@ runcmd:
     # hard-codes (/home/openclaw/.openclaw/bin/openclaw) and at /usr/local/bin.
     # This avoids fighting pnpm's global layout and PATH checks.
     echo "Running direct pnpm add -g openclaw ..."
-    sudo -u openclaw bash -l -c 'pnpm add -g openclaw' || {
+    sudo -u openclaw bash -l -c '
+      corepack prepare pnpm@latest --activate || true
+      export PATH="$HOME/.local/share/pnpm/bin:$PATH"
+      pnpm add -g openclaw
+    ' || {
       echo "Primary pnpm add returned non-zero; attempting fallback global install for discovery..."
-      sudo -u openclaw bash -l -c 'pnpm add -g openclaw 2>&1 | tail -10' || true
+      sudo -u openclaw bash -l -c '
+        export PATH="$HOME/.local/share/pnpm/bin:$PATH"
+        pnpm add -g openclaw
+      ' 2>&1 | tail -10 || true
     }
 
     # 3. Unconditional robust discovery + force symlinks to the two canonical locations.
