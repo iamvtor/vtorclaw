@@ -349,7 +349,7 @@ __TAILSCALE_BLOCK__
 
   # Best-effort health - verify the CLI is usable as the dedicated user (this exercises the full install + symlink)
   - sleep 8
-  - sudo -u openclaw /usr/local/bin/openclaw gateway status || echo "Gateway may still be starting — check with 'sudo -u openclaw /usr/local/bin/openclaw gateway status' ; ls -l /usr/local/bin/openclaw || true ; ls -l /home/openclaw/.openclaw/bin/openclaw || true ; echo 'CLI install appears to have failed - inspect /var/log/cloud-init-output.log for the npm install step'"
+  - sudo -u openclaw /usr/local/bin/openclaw gateway status || echo "Gateway may still be starting — check with 'sudo -u openclaw /usr/local/bin/openclaw gateway status' ; ls -l /usr/local/bin/openclaw || true ; ls -l /home/openclaw/.openclaw/bin/openclaw || true ; echo 'CLI install appears to have failed - inspect /tmp/openclaw-install.log and /var/log/cloud-init-output.log for the npm install step'"
 
 final_message: |
   🦞 OpenClaw VM is ready (or starting).
@@ -426,7 +426,7 @@ Write-Host "  multipass shell $($specData['vm_name'])"
 Write-Host "  multipass info $($specData['vm_name'])"
 Write-Host ""
 Write-Host "Inside the VM (as dedicated user):" -ForegroundColor Green
-Write-Host "  sudo -u openclaw openclaw gateway status"
-Write-Host "  sudo -u openclaw openclaw channels login   # for WhatsApp etc."
+Write-Host "  sudo -u openclaw /usr/local/bin/openclaw gateway status"
+Write-Host "  sudo -u openclaw /usr/local/bin/openclaw channels login   # for WhatsApp etc."
 Write-Host ""
 Write-Host "Happy (isolated) clawing. 🦞" -ForegroundColor Green
