@@ -317,22 +317,24 @@ runcmd:
   - mkdir -p /home/openclaw/.openclaw/bin /home/openclaw/.npm || true
   - chown -R openclaw:openclaw /home/openclaw || true
 
-  # Install a modern Node.js (the distro 'nodejs' on noble/24.04 is v18.19; the openclaw
-  # package postinstall uses .toSorted() and declares engine >=22.19). We do this early,
-  # before the CLI install block, using the official NodeSource repo.
+  # Install Node 24 (via NodeSource) + enable pnpm via corepack.
+  # The openclaw CLI requires a recent Node (we target 24) and we now use pnpm for the
+  # global install step (instead of npm) for better performance/reproducibility.
   - |
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+    curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
     apt-get install -y nodejs
+    corepack enable
+    corepack prepare pnpm@latest --activate || true
 
   # One atomic, fully-logged native CLI install + force-link step.
   # Everything (set -x, echoes, inner sudo output) is captured via exec redirection at the top of this block.
   # This guarantees:
-  #   - /tmp/openclaw-install.log is *always* created (no more "No such file or directory")
-  #   - We use a direct controlled `npm install -g openclaw --prefix ...` (the external install.sh one-liner
-  #     was unreliable in non-interactive system-user early-boot contexts and sometimes left the binary
-  #     in unexpected subdirectories).
+  #   - /tmp/openclaw-install.log is *always* created
+  #   - We use a direct controlled `pnpm add -g openclaw` (after Node 24 + corepack pnpm setup).
+  #     The external install.sh one-liner was unreliable; we also control the global-bin-dir so the
+  #     binary reliably ends up under the prefix the service unit expects.
   #   - Unconditional find + force ln -sf to *both* the location the systemd unit ExecStart uses and
-  #     /usr/local/bin (so the bare "openclaw" name works for sudo -u openclaw thanks to secure_path).
+  #     /usr/local/bin (the latter done as root, since sudo -u cannot write there).
   #   - Loud SUCCESS / VERIFIED markers that are easy to find even when tailscale + node package noise
   #     floods the main cloud-init-output.log.
   - |
@@ -360,12 +362,17 @@ runcmd:
       done
     ' || true
 
-    # 2. Direct controlled npm install to the exact prefix the service and symlinks expect.
-    # This is the primary path (no more reliance on the external https://openclaw.ai/install.sh).
-    echo "Running direct npm install -g openclaw --prefix /home/openclaw/.openclaw ..."
-    sudo -u openclaw bash -l -c 'npm install -g openclaw --prefix /home/openclaw/.openclaw' || {
-      echo "Primary npm --prefix returned non-zero; attempting fallback global install for discovery..."
-      sudo -u openclaw bash -l -c 'npm install -g openclaw 2>&1 | tail -10' || true
+    # 2. Direct controlled pnpm global install.
+    # We set global-bin-dir so the "openclaw" bin lands exactly at /home/openclaw/.openclaw/bin/openclaw
+    # (matching what the systemd unit and symlinks expect). Primary path uses explicit prefix control.
+    echo "Running direct pnpm add -g openclaw (with global-bin-dir) ..."
+    sudo -u openclaw bash -l -c '
+      corepack prepare pnpm@latest --activate || true
+      pnpm config set global-bin-dir /home/openclaw/.openclaw/bin
+      pnpm add -g openclaw
+    ' || {
+      echo "Primary pnpm add returned non-zero; attempting fallback global install for discovery..."
+      sudo -u openclaw bash -l -c 'pnpm add -g openclaw 2>&1 | tail -10' || true
     }
 
     # 3. Unconditional robust discovery + force symlinks to the two canonical locations.

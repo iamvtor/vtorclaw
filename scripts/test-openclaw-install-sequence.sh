@@ -91,12 +91,12 @@ sudo -u openclaw bash -c '
   done
 ' || true
 
-# 2. Direct controlled "npm install -g openclaw --prefix ..." (the real one-liner; here we simulate)
-echo "Running direct npm install -g openclaw --prefix /home/openclaw/.openclaw ..."
-SIM_NPM_RC=0
-# The following line is what the real block has; in test the "npm" is a no-op or we touch files below.
+# 2. Direct controlled "pnpm add -g openclaw" (with global-bin-dir) (the real one-liner; here we simulate)
+echo "Running direct pnpm add -g openclaw (with global-bin-dir) ..."
+SIM_PNPM_RC=0
+# The following line is what the real block has; in test the "pnpm" is a no-op or we touch files below.
 # We keep the command text so the log contains the intent.
-echo "+ sudo -u openclaw bash -l -c npm install -g openclaw --prefix /home/openclaw/.openclaw  (simulated)"
+echo "+ sudo -u openclaw bash -l -c pnpm add -g openclaw  (simulated)"
 
 # 3. Unconditional robust discovery + force links (core of the fix)
 # The sudo -u portion handles only the user-owned location under ~/.openclaw.

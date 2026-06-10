@@ -78,12 +78,18 @@ runcmd:
   - systemctl enable --now docker
   - usermod -aG docker openclaw
 
-  # Native install as dedicated user (direct npm to known prefix + unconditional force link to
-  # /home/openclaw/.openclaw/bin and /usr/local/bin; full output captured to /tmp/openclaw-install.log).
-  # The launcher (scripts/launch.ps1) emits a single robust - | block with exec redirection,
-  # set -x, discovery, and VERIFIED markers. See the generated cloud-init for the exact sequence.
+  # Native install as dedicated user (Node 24 via NodeSource + pnpm global install with
+  # global-bin-dir pointed at the prefix, plus unconditional force link to both locations;
+  # full output captured to /tmp/openclaw-install.log).
+  # The launcher (scripts/launch.ps1) emits the NodeSource + corepack setup early, then a
+  # single robust - | block with exec redirection, set -x, pnpm commands, discovery, and
+  # VERIFIED markers. See the generated cloud-init for the exact sequence.
   - |
-    sudo -u openclaw bash -c 'npm install -g openclaw --prefix /home/openclaw/.openclaw' || true
+    sudo -u openclaw bash -c '
+      corepack prepare pnpm@latest --activate || true
+      pnpm config set global-bin-dir /home/openclaw/.openclaw/bin
+      pnpm add -g openclaw
+    ' || true
   - ln -sf /home/openclaw/.openclaw/bin/openclaw /usr/local/bin/openclaw || true
 
   # Pre-build sandbox images (required for browser tools)
