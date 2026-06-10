@@ -394,15 +394,37 @@ runcmd:
         for f in $FOUND; do
           if [ -f "$f" ]; then
             chmod +x "$f" 2>/dev/null || true
-            ln -sf "$f" "$CANDIDATE"
-            echo "  discovered and linked candidate $f -> $CANDIDATE"
+            # Do not just symlink the pnpm shim — it contains internal requires that resolve
+            # to pnpm store links (e.g. /store/v11/links/...) which break when the shim is
+            # executed through our extra symlinks or in the service context.
+            # Instead, resolve the real main module (openclaw.mjs) right now (while pnpm
+            # resolution is active for this user) and emit a tiny stable launcher script
+            # that directly requires the absolute path we got at install time.
+            MODULE=$(node -e '
+              try {
+                console.log(require.resolve("openclaw/openclaw.mjs"));
+              } catch (e) {
+                console.log("");
+              }
+            ' 2>/dev/null || echo "")
+            if [ -n "$MODULE" ] && [ -f "$MODULE" ]; then
+              cat > "$CANDIDATE" <<LAUNCHER
+#!/usr/bin/env node
+require('${MODULE}');
+LAUNCHER
+              chmod +x "$CANDIDATE"
+              echo "  created stable launcher at $CANDIDATE -> $MODULE"
+            else
+              # Last resort: symlink the shim we found (may or may not work)
+              ln -sf "$f" "$CANDIDATE"
+              chmod +x "$CANDIDATE" || true
+              echo "  (fallback) linked pnpm shim $f -> $CANDIDATE"
+            fi
             break
           fi
         done
       fi
-      if [ -f "$CANDIDATE" ] || [ -L "$CANDIDATE" ]; then
-        ln -sf "$CANDIDATE" "$CANDIDATE"   # ensure the user-home one (idempotent)
-        chmod +x "$CANDIDATE" 2>/dev/null || true
+      if [ -x "$CANDIDATE" ]; then
         echo "  user-home link ready at $CANDIDATE"
       else
         echo "FATAL: no executable openclaw found after install step (user home). Dumping layout:"
@@ -412,15 +434,14 @@ runcmd:
     ' || echo "User-home linking block exited non-zero (non-fatal)"
 
     # Root-level link for /usr/local/bin (bare "openclaw" under sudo -u openclaw relies on this
-    # being in secure_path). We prefer the well-known --prefix location; fall back to a root find.
+    # being in secure_path). We link the stable launcher we created in the user block above
+    # (a small script that does a direct require of the exact module path resolved at install time).
+    # Do *not* link the raw pnpm store shim — its internal requires resolve to pnpm store
+    # symlinks that break when followed through extra layers or from the service.
     ln -sf /home/openclaw/.openclaw/bin/openclaw /usr/local/bin/openclaw 2>/dev/null || true
-    if [ ! -x /usr/local/bin/openclaw ]; then
-      BIN=$(find /home/openclaw -type f \( -name openclaw -o -path "*bin/openclaw" -o -path "*\.bin/openclaw" \) 2>/dev/null | head -1 || true)
-      [ -n "$BIN" ] && ln -sf "$BIN" /usr/local/bin/openclaw || true
-    fi
     chmod +x /usr/local/bin/openclaw 2>/dev/null || true
     ls -l /usr/local/bin/openclaw 2>/dev/null || true
-    echo "Root /usr/local/bin link step complete (check above ls for result)"
+    echo "Root /usr/local/bin link step complete"
 
     # 4. Final verification. These lines are the ones you can grep for in cloud-init-output.log
     #    even when the rest of the log is full of apt "Get:" / "node-..." and tailscale output.
