@@ -388,61 +388,40 @@ runcmd:
     # (the user must own their own files). The /usr/local/bin link must be done as root
     # (a sudo -u openclaw ln into /usr/local/bin will always get "Permission denied").
     echo "Running discovery and force-linking..."
-    # Write the complex discovery/launcher logic to a temp script.
-    # This avoids fragile long single-quoted bash -c '...' with nested quotes and node -e
-    # inside the big YAML | block scalar (which has repeatedly caused parse/syntax errors
-    # in the runcmd script).
+    # Write a small script that creates a stable wrapper at the canonical location.
+    # The wrapper ensures the pnpm global bin dir is in PATH (so the pnpm-installed
+    # openclaw shim can run and resolve its internal modules from the store), then
+    # execs the real pnpm shim at its standard location (~/.local/share/pnpm/bin/openclaw).
+    # This avoids ever directly symlinking or executing the pnpm .bin shim from our
+    # canonical or /usr/local/bin locations (the shim's store-link requires break
+    # when the shim is invoked through extra symlinks or from the service context).
     cat > /tmp/openclaw-link.sh << 'LINKSCRIPT'
     set -e
     mkdir -p /home/openclaw/.openclaw/bin
     CANDIDATE="/home/openclaw/.openclaw/bin/openclaw"
-    if [ ! -x "$CANDIDATE" ]; then
-      FOUND=$(find /home/openclaw -type f \( -name openclaw -o -path "*bin/openclaw" -o -path "*\.bin/openclaw" \) 2>/dev/null | head -5 || true)
-      for f in $FOUND; do
-        if [ -f "$f" ]; then
-          chmod +x "$f" 2>/dev/null || true
-          # Resolve the real main module right after pnpm add. Because this script is executed
-          # via `sudo -u openclaw bash -l /tmp/...`, we are already the user with login env
-          # (PATH includes pnpm bin from the reinforcement above), so plain `node` can resolve.
-          MODULE=$(node -e "try{console.log(require.resolve('openclaw/openclaw.mjs'))}catch(e){console.log('')}" 2>/dev/null || echo "")
-          if [ -n "$MODULE" ] && [ -f "$MODULE" ]; then
-            # Emit a clean launcher (no leading whitespace on shebang, direct require of the exact mjs path
-            # captured at install time). This bypasses pnpm's shim which has fragile /store/v11/links/... requires.
-            printf '#!/usr/bin/env node\nrequire("%s");\n' "$MODULE" > "$CANDIDATE"
-            chmod +x "$CANDIDATE"
-            chown openclaw:openclaw "$CANDIDATE"
-            echo "  created stable launcher at $CANDIDATE -> $MODULE"
-          else
-            # Fallback to the pnpm shim we found (last resort).
-            ln -sf "$f" "$CANDIDATE"
-            chmod +x "$CANDIDATE" || true
-            chown openclaw:openclaw "$CANDIDATE" || true
-            echo "  (fallback) linked pnpm shim $f -> $CANDIDATE"
-          fi
-          break
-        fi
-      done
-    fi
-    if [ -x "$CANDIDATE" ]; then
-      echo "  user-home link ready at $CANDIDATE"
-    else
-      echo "FATAL: no executable openclaw found after install step (user home). Dumping layout:"
-      find /home/openclaw -maxdepth 5 -type f 2>/dev/null | head -30 || true
-      ls -laR /home/openclaw/.openclaw 2>/dev/null | tail -50 || true
-    fi
+    # Create the stable wrapper. The real pnpm shim is at the standard global bin
+    # location after our `pnpm add -g` (we exported the PATH during that step so pnpm
+    # used ~/.local/share/pnpm/bin).
+    cat > "$CANDIDATE" << 'WRAPPER'
+#!/usr/bin/env sh
+export PATH="$HOME/.local/share/pnpm/bin:$PATH"
+exec "$HOME/.local/share/pnpm/bin/openclaw" "$@"
+WRAPPER
+    chmod +x "$CANDIDATE"
+    chown openclaw:openclaw "$CANDIDATE"
+    echo "  created stable wrapper at $CANDIDATE"
     LINKSCRIPT
     chmod +x /tmp/openclaw-link.sh
     chown openclaw:openclaw /tmp/openclaw-link.sh || true
-    # Run the discovery script as the dedicated user with a login shell (-l) so that
-    # the PATH we appended above (including pnpm's bin dir) is active. This makes
-    # the node -e require.resolve succeed for the freshly `pnpm add -g`'d package.
+    # Run as the user with login shell (so .profile with pnpm bin is sourced if needed).
+    # The wrapper itself also sets the PATH explicitly for robustness when exec'ed
+    # by the service or via the /usr/local/bin symlink.
     sudo -u openclaw bash -l /tmp/openclaw-link.sh || echo "User-home linking script exited non-zero (non-fatal)"
 
     # Root-level link for /usr/local/bin (bare "openclaw" under sudo -u openclaw relies on this
-    # being in secure_path). We link the stable launcher we created in the user block above
-    # (a small script that does a direct require of the exact module path resolved at install time).
-    # Do *not* link the raw pnpm store shim — its internal requires resolve to pnpm store
-    # symlinks that break when followed through extra layers or from the service.
+    # being in secure_path). We link the stable wrapper we created above (a small sh script
+    # that sets the pnpm bin in PATH and execs the real pnpm-installed openclaw shim).
+    # This ensures the shim runs with the environment it expects.
     ln -sf /home/openclaw/.openclaw/bin/openclaw /usr/local/bin/openclaw 2>/dev/null || true
     chmod +x /usr/local/bin/openclaw 2>/dev/null || true
     ls -l /usr/local/bin/openclaw 2>/dev/null || true
