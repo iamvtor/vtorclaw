@@ -129,7 +129,11 @@ cat > /tmp/openclaw-link.sh << 'LINKSCRIPT'
     fi
     LINKSCRIPT
 chmod +x /tmp/openclaw-link.sh
-/tmp/openclaw-link.sh || echo "User-home linking script exited non-zero (non-fatal)"
+chown openclaw:openclaw /tmp/openclaw-link.sh || true
+# In real we do `sudo -u openclaw bash -l /tmp/...` so the user's login PATH
+# (with pnpm bin) is active for the node resolution. In the test harness the
+# "sudo" is rewritten to HOME=... so we just run the script directly.
+ /tmp/openclaw-link.sh || echo "User-home linking script exited non-zero (non-fatal)"
 
 # Root-level link for /usr/local/bin (bare "openclaw" relies on this; must be root).
 ln -sf /home/openclaw/.openclaw/bin/openclaw /usr/local/bin/openclaw 2>/dev/null || true

@@ -351,12 +351,15 @@ runcmd:
     chown -R openclaw:openclaw /home/openclaw 2>/dev/null || true
 
     # 1. Reinforce PATH for the dedicated user (covers sudo -u and future login shells).
-    # /usr/local/bin is what makes the bare "openclaw" name work after we create the symlink.
+    # Include /usr/local/bin (for the bare name after we symlink) and pnpm's global bin dir
+    # (so that later node invocations in the user's context, including the discovery script
+    # run via bash -l, can resolve packages installed with `pnpm add -g`).
     sudo -u openclaw bash -c '
       mkdir -p ~/.openclaw/bin
       for f in ~/.bashrc ~/.profile; do
         if [ -f "$f" ] || [ ! -e "$f" ]; then
           grep -q "export PATH=/usr/local/bin:\$PATH" "$f" 2>/dev/null || echo "export PATH=/usr/local/bin:\$PATH" >> "$f"
+          grep -q 'pnpm/bin' "$f" 2>/dev/null || echo 'export PATH="$HOME/.local/share/pnpm/bin:$PATH"' >> "$f"
         fi
       done
     ' || true
@@ -398,8 +401,10 @@ runcmd:
       for f in $FOUND; do
         if [ -f "$f" ]; then
           chmod +x "$f" 2>/dev/null || true
-          # Resolve the real main module right after pnpm add (as the user so pnpm resolution works).
-          MODULE=$(sudo -u openclaw node -e "try{console.log(require.resolve('openclaw/openclaw.mjs'))}catch(e){console.log('')}" 2>/dev/null || echo "")
+          # Resolve the real main module right after pnpm add. Because this script is executed
+          # via `sudo -u openclaw bash -l /tmp/...`, we are already the user with login env
+          # (PATH includes pnpm bin from the reinforcement above), so plain `node` can resolve.
+          MODULE=$(node -e "try{console.log(require.resolve('openclaw/openclaw.mjs'))}catch(e){console.log('')}" 2>/dev/null || echo "")
           if [ -n "$MODULE" ] && [ -f "$MODULE" ]; then
             # Emit a clean launcher (no leading whitespace on shebang, direct require of the exact mjs path
             # captured at install time). This bypasses pnpm's shim which has fragile /store/v11/links/... requires.
@@ -427,7 +432,11 @@ runcmd:
     fi
     LINKSCRIPT
     chmod +x /tmp/openclaw-link.sh
-    /tmp/openclaw-link.sh || echo "User-home linking script exited non-zero (non-fatal)"
+    chown openclaw:openclaw /tmp/openclaw-link.sh || true
+    # Run the discovery script as the dedicated user with a login shell (-l) so that
+    # the PATH we appended above (including pnpm's bin dir) is active. This makes
+    # the node -e require.resolve succeed for the freshly `pnpm add -g`'d package.
+    sudo -u openclaw bash -l /tmp/openclaw-link.sh || echo "User-home linking script exited non-zero (non-fatal)"
 
     # Root-level link for /usr/local/bin (bare "openclaw" under sudo -u openclaw relies on this
     # being in secure_path). We link the stable launcher we created in the user block above
