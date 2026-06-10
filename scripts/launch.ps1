@@ -313,6 +313,17 @@ $indentedOpenClawJson = if ($openclawJson) {
 # (e.g. the defensive re-write of the config as the dedicated user).
 $rawOpenClawJson = $openclawJson
 
+# Indented version (6 spaces) for the placeholder inside the YAML literal block
+# scalar for the adoption heredoc. This keeps all content lines at consistent
+# indentation so yaml-cpp doesn't see a premature "end of map".
+# The heredoc in the generated script will pipe through sed to strip the prefix
+# so the on-disk openclaw.json is clean (no leading whitespace before {).
+$indentedRawOpenClawJson = if ($rawOpenClawJson) {
+    ($rawOpenClawJson -split "`n" | ForEach-Object { "      $_" }) -join "`n"
+} else {
+    ""
+}
+
 # --- Clean cloud-init template with placeholders (easy to maintain) ----------------
 $cloudInitTemplate = @'
 #cloud-config
@@ -584,9 +595,9 @@ runcmd:
       mkdir -p ~/.openclaw
       # Re-ensure the declarative json is present (the cloud-init write_files
       # target; we re-create it here as the user so it is guaranteed for doctor/cli).
-      cat > ~/.openclaw/openclaw.json << '"'"'OPENCLAWJSON'"'"'
-__RAW_OPENCLAW_CONFIG_JSON__
-OPENCLAWJSON
+      cat > ~/.openclaw/openclaw.json << '"'"'OPENCLAWJSON'"'"' | sed 's/^      //'
+      __RAW_OPENCLAW_CONFIG_JSON__
+      OPENCLAWJSON
       chmod 600 ~/.openclaw/openclaw.json
       chown openclaw:openclaw ~/.openclaw/openclaw.json || true
       echo "=== declarative config file (sanitized) ==="
@@ -655,7 +666,7 @@ $cloudInit = $cloudInitTemplate `
     -replace '__GATEWAY_TOKEN__', $gatewayToken `
     -replace '__SECRET_ENV_LINES__', $secretEnvLines `
     -replace '__OPENCLAW_CONFIG_JSON__', $indentedOpenClawJson `
-    -replace '__RAW_OPENCLAW_CONFIG_JSON__', $rawOpenClawJson `
+    -replace '__RAW_OPENCLAW_CONFIG_JSON__', $indentedRawOpenClawJson `
     -replace '__TAILSCALE_BLOCK__', $tailscaleBlock `
     -replace '__VM_NAME__', $specData['vm_name']
 
