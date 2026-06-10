@@ -418,6 +418,18 @@ runcmd:
     # by the service or via the /usr/local/bin symlink.
     sudo -u openclaw bash -l /tmp/openclaw-link.sh || echo "User-home linking script exited non-zero (non-fatal)"
 
+    # Ensure a stable wrapper is at the canonical location (belt-and-suspenders in case the /tmp script took fallback or resolution failed).
+    # The wrapper sets the pnpm bin in PATH and execs the real pnpm shim.
+    CANDIDATE="/home/openclaw/.openclaw/bin/openclaw"
+    cat > "$CANDIDATE" << 'WRAPPER' | sed 's/^    //'
+    #!/usr/bin/env sh
+    export PATH="$HOME/.local/share/pnpm/bin:$PATH"
+    exec "$HOME/.local/share/pnpm/bin/openclaw" "$@"
+    WRAPPER
+    chmod +x "$CANDIDATE"
+    chown openclaw:openclaw "$CANDIDATE" || true
+    echo "  ensured stable wrapper at $CANDIDATE"
+
     # Root-level link for /usr/local/bin (bare "openclaw" under sudo -u openclaw relies on this
     # being in secure_path). We link the stable wrapper we created above (a small sh script
     # that sets the pnpm bin in PATH and execs the real pnpm-installed openclaw shim).
