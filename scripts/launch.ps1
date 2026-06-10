@@ -400,13 +400,7 @@ runcmd:
             # Instead, resolve the real main module (openclaw.mjs) right now (while pnpm
             # resolution is active for this user) and emit a tiny stable launcher script
             # that directly requires the absolute path we got at install time.
-            MODULE=$(node -e '
-              try {
-                console.log(require.resolve("openclaw/openclaw.mjs"));
-              } catch (e) {
-                console.log("");
-              }
-            ' 2>/dev/null || echo "")
+            MODULE=$(node -e "try{console.log(require.resolve('openclaw/openclaw.mjs'))}catch(e){console.log('')}" 2>/dev/null || echo "")
             if [ -n "$MODULE" ] && [ -f "$MODULE" ]; then
               # Emit a clean launcher with no leading whitespace on the shebang.
               # Using printf avoids any heredoc indentation issues inside the YAML block scalar.
