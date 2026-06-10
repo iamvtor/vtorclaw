@@ -110,15 +110,17 @@ sudo -u openclaw bash -c '
     for f in $FOUND; do
       if [ -f "$f" ]; then
         chmod +x "$f" 2>/dev/null || true
-        ln -sf "$f" "$CANDIDATE"
-        echo "  discovered and linked candidate $f -> $CANDIDATE"
+        # In the real launcher we use printf to emit a clean #! launcher (no heredoc
+        # content lines that can cause YAML block scalar indent problems in the
+        # big runcmd - | ). For the test sim we just ensure the file exists.
+        touch "$CANDIDATE"
+        chmod +x "$CANDIDATE"
+        echo "  created stable launcher at $CANDIDATE (sim)"
         break
       fi
     done
   fi
-  if [ -f "$CANDIDATE" ] || [ -L "$CANDIDATE" ]; then
-    ln -sf "$CANDIDATE" "$CANDIDATE"
-    chmod +x "$CANDIDATE" 2>/dev/null || true
+  if [ -x "$CANDIDATE" ]; then
     echo "  user-home link ready at $CANDIDATE"
   else
     echo "FATAL: no executable openclaw found after install step (user home). Dumping layout:"

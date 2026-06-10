@@ -408,10 +408,9 @@ runcmd:
               }
             ' 2>/dev/null || echo "")
             if [ -n "$MODULE" ] && [ -f "$MODULE" ]; then
-              cat > "$CANDIDATE" <<LAUNCHER
-#!/usr/bin/env node
-require('${MODULE}');
-LAUNCHER
+              # Emit a clean launcher with no leading whitespace on the shebang.
+              # Using printf avoids any heredoc indentation issues inside the YAML block scalar.
+              printf '#!/usr/bin/env node\nrequire("%s");\n' "$MODULE" > "$CANDIDATE"
               chmod +x "$CANDIDATE"
               echo "  created stable launcher at $CANDIDATE -> $MODULE"
             else
