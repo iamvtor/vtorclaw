@@ -78,8 +78,12 @@ runcmd:
   - systemctl enable --now docker
   - usermod -aG docker openclaw
 
-  - sudo -u openclaw bash -c 'curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-onboard'
-
+  # Native install as dedicated user (direct npm to known prefix + unconditional force link to
+  # /home/openclaw/.openclaw/bin and /usr/local/bin; full output captured to /tmp/openclaw-install.log).
+  # The launcher (scripts/launch.ps1) emits a single robust - | block with exec redirection,
+  # set -x, discovery, and VERIFIED markers. See the generated cloud-init for the exact sequence.
+  - |
+    sudo -u openclaw bash -c 'npm install -g openclaw --prefix /home/openclaw/.openclaw' || true
   - ln -sf /home/openclaw/.openclaw/bin/openclaw /usr/local/bin/openclaw || true
 
   # Pre-build sandbox images (required for browser tools)
@@ -113,4 +117,5 @@ final_message: |
   OpenClaw VM provisioned with dedicated user + Docker sandboxes (browser tools enabled).
 
   multipass shell <name>
-  sudo -u openclaw openclaw gateway status
+  sudo -u openclaw /usr/local/bin/openclaw gateway status
+  (Bare 'openclaw' also works via the /usr/local/bin link.)

@@ -306,35 +306,95 @@ runcmd:
   - systemctl enable --now docker
   - usermod -aG docker openclaw
 
-  # Make the openclaw CLI available in PATH for the dedicated user early (for sudo -u openclaw openclaw ... and any direct use)
-  - sudo -u openclaw bash -c 'echo "export PATH=/usr/local/bin:\$PATH" >> ~/.bashrc && echo "export PATH=/usr/local/bin:\$PATH" >> ~/.profile'
+  # Early PATH export for the dedicated user (sudo -u openclaw + login shells). The big atomic block below also reinforces this.
+  - sudo -u openclaw bash -c 'echo "export PATH=/usr/local/bin:\$PATH" >> ~/.bashrc && echo "export PATH=/usr/local/bin:\$PATH" >> ~/.profile' || true
 
-  # Native install as the dedicated user (best practice)
-  # Capture output to /tmp for debugging (the external script has occasionally not produced the expected binary)
-  - sudo -u openclaw bash -l -c 'curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-onboard --install-method npm' > /tmp/openclaw-install.log 2>&1 || echo "OPENCLAW NPM INSTALL FAILED (exit $?) - see /tmp/openclaw-install.log"
-  - cat /tmp/openclaw-install.log | tail -20 || true
-
-  - ln -sf /home/openclaw/.openclaw/bin/openclaw /usr/local/bin/openclaw || true
-
-  # Post-install verification (prints clear errors + install log tail to cloud-init log if the binary is missing)
-  - test -x /home/openclaw/.openclaw/bin/openclaw || (echo "ERROR: openclaw binary missing after install step" ; ls -l /home/openclaw/.openclaw/bin/ || true ; cat /tmp/openclaw-install.log | tail -30 || true)
-  - test -L /usr/local/bin/openclaw && test -x /usr/local/bin/openclaw || (echo "ERROR: /usr/local/bin/openclaw symlink missing or broken" ; ls -l /usr/local/bin/openclaw || true)
-
-  # Robust post-install linking: the install script may place the 'openclaw' binary in node_modules/.bin or elsewhere.
-  # Find it and ensure it's at the locations expected by the service (/home/openclaw/.openclaw/bin) and for PATH (/usr/local/bin).
-  # This guarantees the bare 'openclaw' command works for sudo -u openclaw (via /usr/local/bin in secure_path) and the service can start.
+  # One atomic, fully-logged native CLI install + force-link step.
+  # Everything (set -x, echoes, inner sudo output) is captured via exec redirection at the top of this block.
+  # This guarantees:
+  #   - /tmp/openclaw-install.log is *always* created (no more "No such file or directory")
+  #   - We use a direct controlled `npm install -g openclaw --prefix ...` (the external install.sh one-liner
+  #     was unreliable in non-interactive system-user early-boot contexts and sometimes left the binary
+  #     in unexpected subdirectories).
+  #   - Unconditional find + force ln -sf to *both* the location the systemd unit ExecStart uses and
+  #     /usr/local/bin (so the bare "openclaw" name works for sudo -u openclaw thanks to secure_path).
+  #   - Loud SUCCESS / VERIFIED markers that are easy to find even when tailscale + node package noise
+  #     floods the main cloud-init-output.log.
   - |
+    exec > /tmp/openclaw-install.log 2>&1
+    set -x
+    echo "=== OPENCLAW INSTALL START $(date -u) ==="
+
+    # 1. Reinforce PATH for the dedicated user (covers sudo -u and future login shells)
     sudo -u openclaw bash -c '
-      mkdir -p /home/openclaw/.openclaw/bin
-      BIN=$(find /home/openclaw -name openclaw -type f 2>/dev/null | head -1)
-      if [ -n "$BIN" ]; then
-        ln -sf "$BIN" /home/openclaw/.openclaw/bin/openclaw
-        ln -sf "$BIN" /usr/local/bin/openclaw
-        echo "Linked openclaw binary from $BIN to expected locations"
-      else
-        echo "ERROR: no openclaw binary found anywhere after install"
-      fi
+      mkdir -p ~/.openclaw/bin
+      for f in ~/.bashrc ~/.profile; do
+        if [ -f "$f" ] || [ ! -e "$f" ]; then
+          grep -q "export PATH=/usr/local/bin:\$PATH" "$f" 2>/dev/null || echo "export PATH=/usr/local/bin:\$PATH" >> "$f"
+        fi
+      done
     ' || true
+
+    # 2. Direct controlled npm install to the exact prefix the service and symlinks expect.
+    # This is the primary path (no more reliance on the external https://openclaw.ai/install.sh).
+    echo "Running direct npm install -g openclaw --prefix /home/openclaw/.openclaw ..."
+    sudo -u openclaw bash -l -c 'npm install -g openclaw --prefix /home/openclaw/.openclaw' || {
+      echo "Primary npm --prefix returned non-zero; attempting fallback global install for discovery..."
+      sudo -u openclaw bash -l -c 'npm install -g openclaw 2>&1 | tail -10' || true
+    }
+
+    # 3. Unconditional robust discovery + force symlinks to the two canonical locations.
+    # The find covers both the --prefix happy path and cases where npm dropped the bin in
+    # node_modules/.bin or a nested package dir; we always force the two links the rest of the
+    # automation (unit, health checks, user instructions) depends on.
+    echo "Running discovery and force-linking..."
+    sudo -u openclaw bash -c '
+      set -e
+      mkdir -p /home/openclaw/.openclaw/bin
+      CANDIDATE="/home/openclaw/.openclaw/bin/openclaw"
+      if [ ! -x "$CANDIDATE" ]; then
+        FOUND=$(find /home/openclaw -type f \( -name openclaw -o -path "*bin/openclaw" -o -path "*\.bin/openclaw" \) 2>/dev/null | head -5 || true)
+        for f in $FOUND; do
+          if [ -f "$f" ]; then
+            chmod +x "$f" 2>/dev/null || true
+            ln -sf "$f" "$CANDIDATE"
+            echo "  discovered and linked candidate $f -> $CANDIDATE"
+            break
+          fi
+        done
+      fi
+      if [ -f "$CANDIDATE" ] || [ -L "$CANDIDATE" ]; then
+        ln -sf "$CANDIDATE" /usr/local/bin/openclaw
+        chmod +x "$CANDIDATE" /usr/local/bin/openclaw 2>/dev/null || true
+        echo "SUCCESS: openclaw binary linked from $CANDIDATE to service and /usr/local/bin"
+        ls -l "$CANDIDATE" /usr/local/bin/openclaw
+      else
+        echo "FATAL: no executable openclaw found after install step. Dumping layout:"
+        find /home/openclaw -maxdepth 5 -type f 2>/dev/null | head -30 || true
+        ls -laR /home/openclaw/.openclaw 2>/dev/null | tail -50 || true
+      fi
+    ' || echo "Linking block exited non-zero (non-fatal; verification below will surface it)"
+
+    # 4. Final verification. These lines are the ones you can grep for in cloud-init-output.log
+    #    even when the rest of the log is full of apt "Get:" / "node-..." and tailscale output.
+    echo "=== VERIFICATION ==="
+    if [ -x /home/openclaw/.openclaw/bin/openclaw ]; then
+      echo "VERIFIED: /home/openclaw/.openclaw/bin/openclaw is executable"
+      /home/openclaw/.openclaw/bin/openclaw --version 2>/dev/null || echo "(version probe non-zero is acceptable pre-onboard)"
+    else
+      echo "VERIFICATION FAILED: /home/openclaw/.openclaw/bin/openclaw missing or not executable"
+    fi
+    if [ -x /usr/local/bin/openclaw ]; then
+      echo "VERIFIED: /usr/local/bin/openclaw is executable (bare name will work under sudo -u openclaw)"
+    else
+      echo "VERIFICATION FAILED: /usr/local/bin/openclaw missing or not executable"
+    fi
+    echo "=== OPENCLAW INSTALL END $(date -u) ==="
+
+  # Surface the just-captured install log in the main cloud-init log (so a simple
+  # `sudo cat /var/log/cloud-init-output.log | grep -E '(VERIFIED|SUCCESS|OPENCLAW INSTALL)'`
+  # is usually sufficient to see what happened, even on a successful boot).
+  - cat /tmp/openclaw-install.log | tail -25 || true
 
   # Pre-build sandbox images (critical for browser tools)
   - |
@@ -363,9 +423,10 @@ runcmd:
 
 __TAILSCALE_BLOCK__
 
-  # Best-effort health - verify the CLI is usable as the dedicated user (this exercises the full install + symlink)
+  # Best-effort health check (exercises the /usr/local/bin symlink + the PATH we set up).
+  # On any failure, dump the install log so the full transcript is in cloud-init-output.log.
   - sleep 8
-  - sudo -u openclaw /usr/local/bin/openclaw gateway status || echo "Gateway may still be starting — check with 'sudo -u openclaw /usr/local/bin/openclaw gateway status' ; ls -l /usr/local/bin/openclaw || true ; ls -l /home/openclaw/.openclaw/bin/openclaw || true ; echo 'CLI install appears to have failed - inspect /tmp/openclaw-install.log and /var/log/cloud-init-output.log for the npm install step'"
+  - sudo -u openclaw /usr/local/bin/openclaw gateway status || (echo "Gateway status probe failed or still starting"; cat /tmp/openclaw-install.log | tail -40 || true)
 
 final_message: |
   🦞 OpenClaw VM is ready (or starting).
@@ -378,7 +439,7 @@ final_message: |
     sudo -u openclaw /usr/local/bin/openclaw doctor
     sudo -u openclaw /usr/local/bin/openclaw security audit
 
-  (If the bare 'openclaw' command is not found under sudo -u, use the full path above. We are debugging why the install step sometimes doesn't produce the binary/symlink.)
+  (The bare 'openclaw' name also works under sudo -u once /usr/local/bin is linked during provisioning.)
 
   Browser tools are pre-provisioned via the Docker sandbox backend.
 
