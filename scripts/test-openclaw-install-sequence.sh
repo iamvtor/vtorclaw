@@ -99,6 +99,8 @@ SIM_NPM_RC=0
 echo "+ sudo -u openclaw bash -l -c npm install -g openclaw --prefix /home/openclaw/.openclaw  (simulated)"
 
 # 3. Unconditional robust discovery + force links (core of the fix)
+# The sudo -u portion handles only the user-owned location under ~/.openclaw.
+# The /usr/local/bin link is done as root afterwards (sudo -u cannot write there).
 echo "Running discovery and force-linking..."
 sudo -u openclaw bash -c '
   set -e
@@ -116,16 +118,25 @@ sudo -u openclaw bash -c '
     done
   fi
   if [ -f "$CANDIDATE" ] || [ -L "$CANDIDATE" ]; then
-    ln -sf "$CANDIDATE" /usr/local/bin/openclaw
-    chmod +x "$CANDIDATE" /usr/local/bin/openclaw 2>/dev/null || true
-    echo "SUCCESS: openclaw binary linked from $CANDIDATE to service and /usr/local/bin"
-    ls -l "$CANDIDATE" /usr/local/bin/openclaw
+    ln -sf "$CANDIDATE" "$CANDIDATE"
+    chmod +x "$CANDIDATE" 2>/dev/null || true
+    echo "  user-home link ready at $CANDIDATE"
   else
-    echo "FATAL: no executable openclaw found after install step. Dumping layout:"
+    echo "FATAL: no executable openclaw found after install step (user home). Dumping layout:"
     find /home/openclaw -maxdepth 5 -type f 2>/dev/null | head -30 || true
     ls -laR /home/openclaw/.openclaw 2>/dev/null | tail -50 || true
   fi
-' || echo "Linking block exited non-zero (non-fatal; verification below will surface it)"
+' || echo "User-home linking block exited non-zero (non-fatal)"
+
+# Root-level link for /usr/local/bin (bare "openclaw" relies on this; must be root).
+ln -sf /home/openclaw/.openclaw/bin/openclaw /usr/local/bin/openclaw 2>/dev/null || true
+if [ ! -x /usr/local/bin/openclaw ]; then
+  BIN=$(find /home/openclaw -type f \( -name openclaw -o -path "*bin/openclaw" -o -path "*\.bin/openclaw" \) 2>/dev/null | head -1 || true)
+  [ -n "$BIN" ] && ln -sf "$BIN" /usr/local/bin/openclaw || true
+fi
+chmod +x /usr/local/bin/openclaw 2>/dev/null || true
+ls -l /usr/local/bin/openclaw 2>/dev/null || true
+echo "Root /usr/local/bin link step complete (check above ls for result)"
 
 # 4. Verification (these lines are what we grep for in cloud-init-output.log on real launches)
 echo "=== VERIFICATION ==="

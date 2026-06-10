@@ -262,8 +262,9 @@ packages:
   - jq
   - ca-certificates
   - gnupg
-  - nodejs
-  - npm
+  # nodejs/npm deliberately omitted here — we install a modern version (22+) via NodeSource below
+  # because the openclaw CLI (as of 2026.6.5+) requires Node >=22.19 and uses ES2023 features
+  # (e.g. Array.prototype.toSorted) in its postinstall script. The stock Ubuntu 24.04 nodejs is v18.
 
 write_files:
   - path: /etc/systemd/system/openclaw-gateway.service
@@ -316,6 +317,13 @@ runcmd:
   - mkdir -p /home/openclaw/.openclaw/bin /home/openclaw/.npm || true
   - chown -R openclaw:openclaw /home/openclaw || true
 
+  # Install a modern Node.js (the distro 'nodejs' on noble/24.04 is v18.19; the openclaw
+  # package postinstall uses .toSorted() and declares engine >=22.19). We do this early,
+  # before the CLI install block, using the official NodeSource repo.
+  - |
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+    apt-get install -y nodejs
+
   # One atomic, fully-logged native CLI install + force-link step.
   # Everything (set -x, echoes, inner sudo output) is captured via exec redirection at the top of this block.
   # This guarantees:
@@ -361,9 +369,9 @@ runcmd:
     }
 
     # 3. Unconditional robust discovery + force symlinks to the two canonical locations.
-    # The find covers both the --prefix happy path and cases where npm dropped the bin in
-    # node_modules/.bin or a nested package dir; we always force the two links the rest of the
-    # automation (unit, health checks, user instructions) depends on.
+    # The sudo -u portion ensures the user's private copy under ~/.openclaw/bin is present
+    # (the user must own their own files). The /usr/local/bin link must be done as root
+    # (a sudo -u openclaw ln into /usr/local/bin will always get "Permission denied").
     echo "Running discovery and force-linking..."
     sudo -u openclaw bash -c '
       set -e
@@ -381,16 +389,26 @@ runcmd:
         done
       fi
       if [ -f "$CANDIDATE" ] || [ -L "$CANDIDATE" ]; then
-        ln -sf "$CANDIDATE" /usr/local/bin/openclaw
-        chmod +x "$CANDIDATE" /usr/local/bin/openclaw 2>/dev/null || true
-        echo "SUCCESS: openclaw binary linked from $CANDIDATE to service and /usr/local/bin"
-        ls -l "$CANDIDATE" /usr/local/bin/openclaw
+        ln -sf "$CANDIDATE" "$CANDIDATE"   # ensure the user-home one (idempotent)
+        chmod +x "$CANDIDATE" 2>/dev/null || true
+        echo "  user-home link ready at $CANDIDATE"
       else
-        echo "FATAL: no executable openclaw found after install step. Dumping layout:"
+        echo "FATAL: no executable openclaw found after install step (user home). Dumping layout:"
         find /home/openclaw -maxdepth 5 -type f 2>/dev/null | head -30 || true
         ls -laR /home/openclaw/.openclaw 2>/dev/null | tail -50 || true
       fi
-    ' || echo "Linking block exited non-zero (non-fatal; verification below will surface it)"
+    ' || echo "User-home linking block exited non-zero (non-fatal)"
+
+    # Root-level link for /usr/local/bin (bare "openclaw" under sudo -u openclaw relies on this
+    # being in secure_path). We prefer the well-known --prefix location; fall back to a root find.
+    ln -sf /home/openclaw/.openclaw/bin/openclaw /usr/local/bin/openclaw 2>/dev/null || true
+    if [ ! -x /usr/local/bin/openclaw ]; then
+      BIN=$(find /home/openclaw -type f \( -name openclaw -o -path "*bin/openclaw" -o -path "*\.bin/openclaw" \) 2>/dev/null | head -1 || true)
+      [ -n "$BIN" ] && ln -sf "$BIN" /usr/local/bin/openclaw || true
+    fi
+    chmod +x /usr/local/bin/openclaw 2>/dev/null || true
+    ls -l /usr/local/bin/openclaw 2>/dev/null || true
+    echo "Root /usr/local/bin link step complete (check above ls for result)"
 
     # 4. Final verification. These lines are the ones you can grep for in cloud-init-output.log
     #    even when the rest of the log is full of apt "Get:" / "node-..." and tailscale output.
