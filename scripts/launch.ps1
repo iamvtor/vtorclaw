@@ -595,11 +595,16 @@ runcmd:
       mkdir -p ~/.openclaw
       # Re-ensure the declarative json is present (the cloud-init write_files
       # target; we re-create it here as the user so it is guaranteed for doctor/cli).
-      cat > ~/.openclaw/openclaw.json << '"'"'OPENCLAWJSON'"'"' | sed 's/^      //'
+      # Only overwrite if missing or empty (write_files should have created it;
+      # this is a belt-and-suspenders for timing/ownership races during the long
+      # install). Use a simple heredoc + sed dedent so the on-disk file is clean JSON.
+      if [ ! -s ~/.openclaw/openclaw.json ]; then
+        cat > ~/.openclaw/openclaw.json << 'JSONEOF' | sed 's/^      //'
       __RAW_OPENCLAW_CONFIG_JSON__
-      OPENCLAWJSON
-      chmod 600 ~/.openclaw/openclaw.json
-      chown openclaw:openclaw ~/.openclaw/openclaw.json || true
+      JSONEOF
+        chmod 600 ~/.openclaw/openclaw.json
+        chown openclaw:openclaw ~/.openclaw/openclaw.json || true
+      fi
       echo "=== declarative config file (sanitized) ==="
       jq "if .gateway and .gateway.auth then .gateway.auth.token = \"REDACTED\" else . end" ~/.openclaw/openclaw.json 2>/dev/null || cat ~/.openclaw/openclaw.json
       echo "=== openclaw config validate ==="
