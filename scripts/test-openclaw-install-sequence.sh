@@ -101,43 +101,39 @@ echo "+ sudo -u openclaw bash -l -c 'corepack prepare ...; export PATH=...; pnpm
 # The sudo -u portion handles only the user-owned location under ~/.openclaw.
 # The /usr/local/bin link is done as root afterwards (sudo -u cannot write there).
 echo "Running discovery and force-linking..."
-sudo -u openclaw bash -c '
-  set -e
-  mkdir -p /home/openclaw/.openclaw/bin
-  CANDIDATE="/home/openclaw/.openclaw/bin/openclaw"
-  if [ ! -x "$CANDIDATE" ]; then
-    FOUND=$(find /home/openclaw -type f \( -name openclaw -o -path "*bin/openclaw" -o -path "*\.bin/openclaw" \) 2>/dev/null | head -5 || true)
-    for f in $FOUND; do
-      if [ -f "$f" ]; then
-        chmod +x "$f" 2>/dev/null || true
-        # In the real launcher we use printf to emit a clean #! launcher (no heredoc
-        # content lines that can cause YAML block scalar indent problems in the
-        # big runcmd - | ). For the test sim we just ensure the file exists.
-        touch "$CANDIDATE"
-        chmod +x "$CANDIDATE"
-        echo "  created stable launcher at $CANDIDATE (sim)"
-        break
-      fi
-    done
-  fi
-  if [ -x "$CANDIDATE" ]; then
-    echo "  user-home link ready at $CANDIDATE"
-  else
-    echo "FATAL: no executable openclaw found after install step (user home). Dumping layout:"
-    find /home/openclaw -maxdepth 5 -type f 2>/dev/null | head -30 || true
-    ls -laR /home/openclaw/.openclaw 2>/dev/null | tail -50 || true
-  fi
-' || echo "User-home linking block exited non-zero (non-fatal)"
+# In real: write a /tmp script (avoids quote hell in the big YAML | block), then run it.
+cat > /tmp/openclaw-link.sh << 'LINKSCRIPT'
+# (simplified for test payload)
+set -e
+mkdir -p /home/openclaw/.openclaw/bin
+CANDIDATE="/home/openclaw/.openclaw/bin/openclaw"
+if [ ! -x "$CANDIDATE" ]; then
+  FOUND=$(find /home/openclaw -type f \( -name openclaw -o -path "*bin/openclaw" -o -path "*\.bin/openclaw" \) 2>/dev/null | head -5 || true)
+  for f in $FOUND; do
+    if [ -f "$f" ]; then
+      chmod +x "$f" 2>/dev/null || true
+      touch "$CANDIDATE"
+      chmod +x "$CANDIDATE"
+      chown openclaw:openclaw "$CANDIDATE" || true
+      echo "  created stable launcher at $CANDIDATE (sim)"
+      break
+    fi
+  done
+fi
+if [ -x "$CANDIDATE" ]; then
+  echo "  user-home link ready at $CANDIDATE"
+else
+  echo "FATAL: no executable openclaw found after install step (user home)."
+fi
+LINKSCRIPT
+chmod +x /tmp/openclaw-link.sh
+/tmp/openclaw-link.sh || echo "User-home linking script exited non-zero (non-fatal)"
 
 # Root-level link for /usr/local/bin (bare "openclaw" relies on this; must be root).
 ln -sf /home/openclaw/.openclaw/bin/openclaw /usr/local/bin/openclaw 2>/dev/null || true
-if [ ! -x /usr/local/bin/openclaw ]; then
-  BIN=$(find /home/openclaw -type f \( -name openclaw -o -path "*bin/openclaw" -o -path "*\.bin/openclaw" \) 2>/dev/null | head -1 || true)
-  [ -n "$BIN" ] && ln -sf "$BIN" /usr/local/bin/openclaw || true
-fi
 chmod +x /usr/local/bin/openclaw 2>/dev/null || true
 ls -l /usr/local/bin/openclaw 2>/dev/null || true
-echo "Root /usr/local/bin link step complete (check above ls for result)"
+echo "Root /usr/local/bin link step complete"
 
 # 4. Verification (these lines are what we grep for in cloud-init-output.log on real launches)
 echo "=== VERIFICATION ==="

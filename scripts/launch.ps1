@@ -385,46 +385,49 @@ runcmd:
     # (the user must own their own files). The /usr/local/bin link must be done as root
     # (a sudo -u openclaw ln into /usr/local/bin will always get "Permission denied").
     echo "Running discovery and force-linking..."
-    sudo -u openclaw bash -c '
-      set -e
-      mkdir -p /home/openclaw/.openclaw/bin
-      CANDIDATE="/home/openclaw/.openclaw/bin/openclaw"
-      if [ ! -x "$CANDIDATE" ]; then
-        FOUND=$(find /home/openclaw -type f \( -name openclaw -o -path "*bin/openclaw" -o -path "*\.bin/openclaw" \) 2>/dev/null | head -5 || true)
-        for f in $FOUND; do
-          if [ -f "$f" ]; then
-            chmod +x "$f" 2>/dev/null || true
-            # Do not just symlink the pnpm shim — it contains internal requires that resolve
-            # to pnpm store links (e.g. /store/v11/links/...) which break when the shim is
-            # executed through our extra symlinks or in the service context.
-            # Instead, resolve the real main module (openclaw.mjs) right now (while pnpm
-            # resolution is active for this user) and emit a tiny stable launcher script
-            # that directly requires the absolute path we got at install time.
-            MODULE=$(node -e "try{console.log(require.resolve('openclaw/openclaw.mjs'))}catch(e){console.log('')}" 2>/dev/null || echo "")
-            if [ -n "$MODULE" ] && [ -f "$MODULE" ]; then
-              # Emit a clean launcher with no leading whitespace on the shebang.
-              # Using printf avoids any heredoc indentation issues inside the YAML block scalar.
-              printf '#!/usr/bin/env node\nrequire("%s");\n' "$MODULE" > "$CANDIDATE"
-              chmod +x "$CANDIDATE"
-              echo "  created stable launcher at $CANDIDATE -> $MODULE"
-            else
-              # Last resort: symlink the shim we found (may or may not work)
-              ln -sf "$f" "$CANDIDATE"
-              chmod +x "$CANDIDATE" || true
-              echo "  (fallback) linked pnpm shim $f -> $CANDIDATE"
-            fi
-            break
-          fi
-        done
-      fi
-      if [ -x "$CANDIDATE" ]; then
-        echo "  user-home link ready at $CANDIDATE"
+    # Write the complex discovery/launcher logic to a temp script.
+    # This avoids fragile long single-quoted bash -c '...' with nested quotes and node -e
+    # inside the big YAML | block scalar (which has repeatedly caused parse/syntax errors
+    # in the runcmd script).
+    cat > /tmp/openclaw-link.sh << 'LINKSCRIPT'
+set -e
+mkdir -p /home/openclaw/.openclaw/bin
+CANDIDATE="/home/openclaw/.openclaw/bin/openclaw"
+if [ ! -x "$CANDIDATE" ]; then
+  FOUND=$(find /home/openclaw -type f \( -name openclaw -o -path "*bin/openclaw" -o -path "*\.bin/openclaw" \) 2>/dev/null | head -5 || true)
+  for f in $FOUND; do
+    if [ -f "$f" ]; then
+      chmod +x "$f" 2>/dev/null || true
+      # Resolve the real main module right after pnpm add (as the user so pnpm resolution works).
+      MODULE=$(sudo -u openclaw node -e "try{console.log(require.resolve('openclaw/openclaw.mjs'))}catch(e){console.log('')}" 2>/dev/null || echo "")
+      if [ -n "$MODULE" ] && [ -f "$MODULE" ]; then
+        # Emit a clean launcher (no leading whitespace on shebang, direct require of the exact mjs path
+        # captured at install time). This bypasses pnpm's shim which has fragile /store/v11/links/... requires.
+        printf '#!/usr/bin/env node\nrequire("%s");\n' "$MODULE" > "$CANDIDATE"
+        chmod +x "$CANDIDATE"
+        chown openclaw:openclaw "$CANDIDATE"
+        echo "  created stable launcher at $CANDIDATE -> $MODULE"
       else
-        echo "FATAL: no executable openclaw found after install step (user home). Dumping layout:"
-        find /home/openclaw -maxdepth 5 -type f 2>/dev/null | head -30 || true
-        ls -laR /home/openclaw/.openclaw 2>/dev/null | tail -50 || true
+        # Fallback to the pnpm shim we found (last resort).
+        ln -sf "$f" "$CANDIDATE"
+        chmod +x "$CANDIDATE" || true
+        chown openclaw:openclaw "$CANDIDATE" || true
+        echo "  (fallback) linked pnpm shim $f -> $CANDIDATE"
       fi
-    ' || echo "User-home linking block exited non-zero (non-fatal)"
+      break
+    fi
+  done
+fi
+if [ -x "$CANDIDATE" ]; then
+  echo "  user-home link ready at $CANDIDATE"
+else
+  echo "FATAL: no executable openclaw found after install step (user home). Dumping layout:"
+  find /home/openclaw -maxdepth 5 -type f 2>/dev/null | head -30 || true
+  ls -laR /home/openclaw/.openclaw 2>/dev/null | tail -50 || true
+fi
+LINKSCRIPT
+    chmod +x /tmp/openclaw-link.sh
+    /tmp/openclaw-link.sh || echo "User-home linking script exited non-zero (non-fatal)"
 
     # Root-level link for /usr/local/bin (bare "openclaw" under sudo -u openclaw relies on this
     # being in secure_path). We link the stable launcher we created in the user block above
