@@ -402,11 +402,11 @@ runcmd:
     # Create the stable wrapper. The real pnpm shim is at the standard global bin
     # location after our `pnpm add -g` (we exported the PATH during that step so pnpm
     # used ~/.local/share/pnpm/bin).
-    cat > "$CANDIDATE" << 'WRAPPER'
-#!/usr/bin/env sh
-export PATH="$HOME/.local/share/pnpm/bin:$PATH"
-exec "$HOME/.local/share/pnpm/bin/openclaw" "$@"
-WRAPPER
+    cat > "$CANDIDATE" << 'WRAPPER' | sed 's/^    //'
+    #!/usr/bin/env sh
+    export PATH="$HOME/.local/share/pnpm/bin:$PATH"
+    exec "$HOME/.local/share/pnpm/bin/openclaw" "$@"
+    WRAPPER
     chmod +x "$CANDIDATE"
     chown openclaw:openclaw "$CANDIDATE"
     echo "  created stable wrapper at $CANDIDATE"

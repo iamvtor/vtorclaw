@@ -109,11 +109,11 @@ cat > /tmp/openclaw-link.sh << 'LINKSCRIPT'
     mkdir -p /home/openclaw/.openclaw/bin
     CANDIDATE="/home/openclaw/.openclaw/bin/openclaw"
     # Create the stable wrapper (sets pnpm bin in PATH then execs the real pnpm shim).
-    cat > "$CANDIDATE" << 'WRAPPER'
-#!/usr/bin/env sh
-export PATH="$HOME/.local/share/pnpm/bin:$PATH"
-exec "$HOME/.local/share/pnpm/bin/openclaw" "$@"
-WRAPPER
+    cat > "$CANDIDATE" << 'WRAPPER' | sed 's/^    //'
+    #!/usr/bin/env sh
+    export PATH="$HOME/.local/share/pnpm/bin:$PATH"
+    exec "$HOME/.local/share/pnpm/bin/openclaw" "$@"
+    WRAPPER
     chmod +x "$CANDIDATE"
     chown openclaw:openclaw "$CANDIDATE" || true
     echo "  created stable wrapper at $CANDIDATE (sim)"
