@@ -593,20 +593,19 @@ runcmd:
       set -x
       export PATH="$HOME/.local/share/pnpm/bin:$PATH"
       mkdir -p ~/.openclaw
-      # Re-ensure the declarative json is present (the cloud-init write_files
-      # target; we re-create it here as the user so it is guaranteed for doctor/cli).
-      # Only overwrite if missing or empty (write_files should have created it;
-      # this is a belt-and-suspenders for timing/ownership races during the long
-      # install). Use a simple heredoc + sed dedent so the on-disk file is clean JSON.
-      if [ ! -s ~/.openclaw/openclaw.json ]; then
-        cat > ~/.openclaw/openclaw.json << 'JSONEOF' | sed 's/^      //'
-      __RAW_OPENCLAW_CONFIG_JSON__
-      JSONEOF
-        chmod 600 ~/.openclaw/openclaw.json
+      # The JSON should have been written by cloud-init write_files.
+      # We defensively ensure ownership/perms (early chowns may race with write_files).
+      # Then let the binary's doctor adopt/fix the config for CLI view, create needed
+      # dirs (state, sessions, etc.), and we restart the system service afterwards.
+      if [ -f ~/.openclaw/openclaw.json ]; then
+        chmod 600 ~/.openclaw/openclaw.json || true
         chown openclaw:openclaw ~/.openclaw/openclaw.json || true
+        echo "=== declarative config file (sanitized) ==="
+        jq "if .gateway and .gateway.auth then .gateway.auth.token = \"REDACTED\" else . end" ~/.openclaw/openclaw.json 2>/dev/null || cat ~/.openclaw/openclaw.json
+        echo "size: $(wc -c < ~/.openclaw/openclaw.json) bytes"
+      else
+        echo "WARNING: ~/.openclaw/openclaw.json not present after write_files + early chowns"
       fi
-      echo "=== declarative config file (sanitized) ==="
-      jq "if .gateway and .gateway.auth then .gateway.auth.token = \"REDACTED\" else . end" ~/.openclaw/openclaw.json 2>/dev/null || cat ~/.openclaw/openclaw.json
       echo "=== openclaw config validate ==="
       openclaw config validate 2>&1 || true
       echo "=== openclaw doctor --fix (adopt the declarative config for CLI view) ==="
@@ -624,8 +623,7 @@ runcmd:
         done
         echo "exported OPENCLAW_GATEWAY_TOKEN to user rc files"
       fi
-      # After the user-side adoption (json re-write + doctor --fix + token export),
-      # restart the system service so it picks up the final declarative config.
+      # Restart the system service so it picks up the final (adopted) config.
       # This ensures the gateway process is running under our hardened unit
       # with a schema-valid config for this pnpm-installed version.
       systemctl restart openclaw-gateway.service || true
