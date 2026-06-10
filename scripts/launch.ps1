@@ -320,6 +320,9 @@ runcmd:
   - test -x /home/openclaw/.openclaw/bin/openclaw || (echo "ERROR: openclaw binary missing after install step" ; ls -l /home/openclaw/.openclaw/bin/ || true ; cat /tmp/openclaw-install.log | tail -30 || true)
   - test -L /usr/local/bin/openclaw && test -x /usr/local/bin/openclaw || (echo "ERROR: /usr/local/bin/openclaw symlink missing or broken" ; ls -l /usr/local/bin/openclaw || true)
 
+  # Fallback to ensure binary exists if the primary install script didn't (direct npm install to the expected prefix)
+  - sudo -u openclaw [ -x /home/openclaw/.openclaw/bin/openclaw ] || (echo "Primary install did not produce binary, trying direct npm fallback"; sudo -u openclaw bash -l -c 'npm install -g openclaw --prefix /home/openclaw/.openclaw 2>&1 | tail -5' || true ; ln -sf /home/openclaw/.openclaw/bin/openclaw /usr/local/bin/openclaw || true)
+
   # Pre-build sandbox images (critical for browser tools)
   - |
     sudo -u openclaw bash -c 'docker build -t openclaw-sandbox:bookworm-slim - << "DOCKERFILE"
