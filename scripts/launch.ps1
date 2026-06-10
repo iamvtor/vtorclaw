@@ -284,7 +284,7 @@ write_files:
       WorkingDirectory=/home/openclaw
       Environment=OPENCLAW_GATEWAY_TOKEN=__GATEWAY_TOKEN__
 __SECRET_ENV_LINES__
-      ExecStart=/home/openclaw/.openclaw/bin/openclaw gateway run
+      ExecStart=/home/openclaw/.openclaw/bin/openclaw gateway run --allow-unconfigured
       Restart=on-failure
       RestartSec=5s
 
