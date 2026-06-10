@@ -352,12 +352,15 @@ runcmd:
     # Clean any stale root-owned npm state from previous partial attempts (helps the "root-owned files" cache warning).
     rm -rf /home/openclaw/.npm/_logs 2>/dev/null || true
 
-    # 1. Reinforce PATH for the dedicated user (covers sudo -u and future login shells)
+    # 1. Reinforce PATH for the dedicated user (covers sudo -u and future login shells).
+    # Include both /usr/local/bin (for the bare openclaw name) and the pnpm global bin dir.
     sudo -u openclaw bash -c '
       mkdir -p ~/.openclaw/bin
       for f in ~/.bashrc ~/.profile; do
         if [ -f "$f" ] || [ ! -e "$f" ]; then
           grep -q "export PATH=/usr/local/bin:\$PATH" "$f" 2>/dev/null || echo "export PATH=/usr/local/bin:\$PATH" >> "$f"
+          grep -q "export PNPM_HOME=~/.openclaw" "$f" 2>/dev/null || echo "export PNPM_HOME=~/.openclaw" >> "$f"
+          grep -q "export PATH=\$PNPM_HOME/bin:\$PATH" "$f" 2>/dev/null || echo "export PATH=\$PNPM_HOME/bin:\$PATH" >> "$f"
         fi
       done
     ' || true
@@ -367,12 +370,20 @@ runcmd:
     # (matching what the systemd unit and symlinks expect). Primary path uses explicit prefix control.
     echo "Running direct pnpm add -g openclaw (with global-bin-dir) ..."
     sudo -u openclaw bash -l -c '
+      export PNPM_HOME=/home/openclaw/.openclaw
+      mkdir -p "$PNPM_HOME/bin"
+      export PATH="$PNPM_HOME/bin:$PATH"
       corepack prepare pnpm@latest --activate || true
-      pnpm config set global-bin-dir /home/openclaw/.openclaw/bin
+      pnpm config set global-bin-dir "$PNPM_HOME/bin"
       pnpm add -g openclaw
     ' || {
       echo "Primary pnpm add returned non-zero; attempting fallback global install for discovery..."
-      sudo -u openclaw bash -l -c 'pnpm add -g openclaw 2>&1 | tail -10' || true
+      sudo -u openclaw bash -l -c '
+        export PNPM_HOME=/home/openclaw/.openclaw
+        mkdir -p "$PNPM_HOME/bin"
+        export PATH="$PNPM_HOME/bin:$PATH"
+        pnpm add -g openclaw
+      ' 2>&1 | tail -10 || true
     }
 
     # 3. Unconditional robust discovery + force symlinks to the two canonical locations.

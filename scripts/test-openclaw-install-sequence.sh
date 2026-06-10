@@ -46,7 +46,7 @@ run_as_openclaw() {
 # The *exact* payload we intend to embed under the "- |" literal scalar in launch.ps1 runcmd.
 # Differences from production:
 #   - Paths are rewritten at runtime via sed or by the run_ helpers to use $SIM_ROOT.
-#   - "npm install" is simulated by touching a file (we test both "direct" and "nested" placements).
+#   - "pnpm add -g" is simulated by touching a file (we test both "direct" and "nested" placements).
 #   - We do not actually need node/npm present.
 # The redirection (exec > ...), set -x, markers, PATH append, controlled npm (simulated), find+force link,
 # and VERIFIED checks are *identical* in structure and quoting to what will ship.
@@ -81,12 +81,14 @@ mkdir -p /home/openclaw/.openclaw/bin /home/openclaw/.npm 2>/dev/null || true
 chown -R openclaw:openclaw /home/openclaw 2>/dev/null || true
 rm -rf /home/openclaw/.npm/_logs 2>/dev/null || true
 
-# 1. Early PATH for the dedicated user (sudo -u + login shells + bare "openclaw" via /usr/local/bin)
+# 1. Early PATH for the dedicated user (sudo -u + login shells + bare "openclaw" via /usr/local/bin + pnpm bin)
 sudo -u openclaw bash -c '
   mkdir -p ~/.openclaw/bin
   for f in ~/.bashrc ~/.profile; do
     if [ -f "$f" ] || [ ! -e "$f" ]; then
       grep -q "export PATH=/usr/local/bin:\$PATH" "$f" 2>/dev/null || echo "export PATH=/usr/local/bin:\$PATH" >> "$f"
+      grep -q "export PNPM_HOME=~/.openclaw" "$f" 2>/dev/null || echo "export PNPM_HOME=~/.openclaw" >> "$f"
+      grep -q "export PATH=\$PNPM_HOME/bin:\$PATH" "$f" 2>/dev/null || echo "export PATH=\$PNPM_HOME/bin:\$PATH" >> "$f"
     fi
   done
 ' || true
@@ -96,7 +98,7 @@ echo "Running direct pnpm add -g openclaw (with global-bin-dir) ..."
 SIM_PNPM_RC=0
 # The following line is what the real block has; in test the "pnpm" is a no-op or we touch files below.
 # We keep the command text so the log contains the intent.
-echo "+ sudo -u openclaw bash -l -c pnpm add -g openclaw  (simulated)"
+echo "+ sudo -u openclaw bash -l -c 'export PNPM_HOME=...; mkdir -p ...; export PATH=...; corepack prepare ...; pnpm config ...; pnpm add -g openclaw'  (simulated)"
 
 # 3. Unconditional robust discovery + force links (core of the fix)
 # The sudo -u portion handles only the user-owned location under ~/.openclaw.
@@ -168,7 +170,7 @@ PAYLOAD_EOF
     "$payload_script"
 
   # Scenario-specific "install" side effect: create a plausible openclaw binary *before* the discovery runs.
-  # This mimics what a successful `npm install -g openclaw --prefix /home/openclaw/.openclaw` would do,
+  # This mimics what a successful `pnpm add -g openclaw` (with global-bin-dir) would do,
   # or the case where it lands in node_modules/.bin.
   mkdir -p "$SIM_HOME/.openclaw/bin"
   if [ "$scenario" = "direct" ]; then
