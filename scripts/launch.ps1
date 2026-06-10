@@ -323,7 +323,8 @@ runcmd:
   # Robust post-install linking: the install script may place the 'openclaw' binary in node_modules/.bin or elsewhere.
   # Find it and ensure it's at the locations expected by the service (/home/openclaw/.openclaw/bin) and for PATH (/usr/local/bin).
   # This guarantees the bare 'openclaw' command works for sudo -u openclaw (via /usr/local/bin in secure_path) and the service can start.
-  - sudo -u openclaw bash -c '
+  - |
+    sudo -u openclaw bash -c '
       mkdir -p /home/openclaw/.openclaw/bin
       BIN=$(find /home/openclaw -name openclaw -type f 2>/dev/null | head -1)
       if [ -n "$BIN" ]; then
