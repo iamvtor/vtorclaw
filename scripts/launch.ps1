@@ -330,11 +330,11 @@ runcmd:
   # Everything (set -x, echoes, inner sudo output) is captured via exec redirection at the top of this block.
   # This guarantees:
   #   - /tmp/openclaw-install.log is *always* created
-  #   - We use a direct controlled `pnpm add -g openclaw` (after Node 24 + corepack pnpm setup).
-  #     The external install.sh one-liner was unreliable; we also control the global-bin-dir so the
-  #     binary reliably ends up under the prefix the service unit expects.
-  #   - Unconditional find + force ln -sf to *both* the location the systemd unit ExecStart uses and
-  #     /usr/local/bin (the latter done as root, since sudo -u cannot write there).
+  #   - We use the official simple `pnpm add -g openclaw` (after Node 24 + corepack).
+  #     (The external install.sh was unreliable; pnpm puts the binary in its own global layout.)
+  #   - Unconditional find + force ln -sf (after the install) to *both* the location the systemd
+  #     unit ExecStart hard-codes (/home/openclaw/.openclaw/bin/openclaw) and /usr/local/bin
+  #     (the /usr/local link is done as root, since sudo -u cannot write there).
   #   - Loud SUCCESS / VERIFIED markers that are easy to find even when tailscale + node package noise
   #     floods the main cloud-init-output.log.
   - |
@@ -353,37 +353,26 @@ runcmd:
     rm -rf /home/openclaw/.npm/_logs 2>/dev/null || true
 
     # 1. Reinforce PATH for the dedicated user (covers sudo -u and future login shells).
-    # Include both /usr/local/bin (for the bare openclaw name) and the pnpm global bin dir.
+    # /usr/local/bin is what makes the bare "openclaw" name work after we create the symlink.
     sudo -u openclaw bash -c '
       mkdir -p ~/.openclaw/bin
       for f in ~/.bashrc ~/.profile; do
         if [ -f "$f" ] || [ ! -e "$f" ]; then
           grep -q "export PATH=/usr/local/bin:\$PATH" "$f" 2>/dev/null || echo "export PATH=/usr/local/bin:\$PATH" >> "$f"
-          grep -q "export PNPM_HOME=~/.openclaw" "$f" 2>/dev/null || echo "export PNPM_HOME=~/.openclaw" >> "$f"
-          grep -q "export PATH=\$PNPM_HOME/bin:\$PATH" "$f" 2>/dev/null || echo "export PATH=\$PNPM_HOME/bin:\$PATH" >> "$f"
         fi
       done
     ' || true
 
-    # 2. Direct controlled pnpm global install.
-    # We set global-bin-dir so the "openclaw" bin lands exactly at /home/openclaw/.openclaw/bin/openclaw
-    # (matching what the systemd unit and symlinks expect). Primary path uses explicit prefix control.
-    echo "Running direct pnpm add -g openclaw (with global-bin-dir) ..."
-    sudo -u openclaw bash -l -c '
-      export PNPM_HOME=/home/openclaw/.openclaw
-      mkdir -p "$PNPM_HOME/bin"
-      export PATH="$PNPM_HOME/bin:$PATH"
-      corepack prepare pnpm@latest --activate || true
-      pnpm config set global-bin-dir "$PNPM_HOME/bin"
-      pnpm add -g openclaw
-    ' || {
+    # 2. Direct controlled pnpm global install (official simple command).
+    # pnpm will place the "openclaw" binary/shim somewhere under the user's home
+    # (typically in its global store + bin dir). We then use the robust discovery/find
+    # (below) + force links to put a symlink at the exact location the systemd unit
+    # hard-codes (/home/openclaw/.openclaw/bin/openclaw) and at /usr/local/bin.
+    # This avoids fighting pnpm's global layout and PATH checks.
+    echo "Running direct pnpm add -g openclaw ..."
+    sudo -u openclaw bash -l -c 'pnpm add -g openclaw' || {
       echo "Primary pnpm add returned non-zero; attempting fallback global install for discovery..."
-      sudo -u openclaw bash -l -c '
-        export PNPM_HOME=/home/openclaw/.openclaw
-        mkdir -p "$PNPM_HOME/bin"
-        export PATH="$PNPM_HOME/bin:$PATH"
-        pnpm add -g openclaw
-      ' 2>&1 | tail -10 || true
+      sudo -u openclaw bash -l -c 'pnpm add -g openclaw 2>&1 | tail -10' || true
     }
 
     # 3. Unconditional robust discovery + force symlinks to the two canonical locations.
