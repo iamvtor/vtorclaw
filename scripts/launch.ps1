@@ -375,11 +375,13 @@ runcmd:
       corepack prepare pnpm@latest --activate || true
       export PATH="$HOME/.local/share/pnpm/bin:$PATH"
       pnpm add -g openclaw
+      pnpm rebuild -g openclaw || true
     ' || {
       echo "Primary pnpm add returned non-zero; attempting fallback global install for discovery..."
       sudo -u openclaw bash -l -c '
         export PATH="$HOME/.local/share/pnpm/bin:$PATH"
         pnpm add -g openclaw
+        pnpm rebuild -g openclaw || true
       ' 2>&1 | tail -10 || true
     }
 
@@ -484,6 +486,13 @@ runcmd:
 
   - systemctl daemon-reload
   - systemctl enable --now openclaw-gateway.service
+
+  # Clean up any user-level services the openclaw CLI may have installed (it sometimes
+  # does "onboard" style user daemon setup on first run). Our design uses a system
+  # service for the dedicated user; disable the user ones so status and management
+  # are consistent with the system unit we wrote.
+  - sudo -u openclaw systemctl --user disable --now openclaw-gateway.service openclaw.service 2>/dev/null || true
+  - systemctl daemon-reload
 
 __TAILSCALE_BLOCK__
 
