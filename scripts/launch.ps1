@@ -306,8 +306,15 @@ runcmd:
   - systemctl enable --now docker
   - usermod -aG docker openclaw
 
-  # Early PATH export for the dedicated user (sudo -u openclaw + login shells). The big atomic block below also reinforces this.
-  - sudo -u openclaw bash -c 'echo "export PATH=/usr/local/bin:\$PATH" >> ~/.bashrc && echo "export PATH=/usr/local/bin:\$PATH" >> ~/.profile' || true
+  # Early root-level ownership fix + dir creation.
+  # cloud-init + "system: true" user creation can leave /home/openclaw (and files under it)
+  # owned by root at the moment the first runcmd items execute. Any immediate "sudo -u openclaw"
+  # that tries to mkdir or write ~/.openclaw or ~/.bashrc will get EACCES / Permission denied.
+  # We fix it as root *before* any sudo -u write attempts. The big install block below also
+  # reinforces this defensively at the top of its payload.
+  - chown -R openclaw:openclaw /home/openclaw || true
+  - mkdir -p /home/openclaw/.openclaw/bin /home/openclaw/.npm || true
+  - chown -R openclaw:openclaw /home/openclaw || true
 
   # One atomic, fully-logged native CLI install + force-link step.
   # Everything (set -x, echoes, inner sudo output) is captured via exec redirection at the top of this block.
@@ -324,6 +331,16 @@ runcmd:
     exec > /tmp/openclaw-install.log 2>&1
     set -x
     echo "=== OPENCLAW INSTALL START $(date -u) ==="
+
+    # As root (this block runs as root), ensure the dedicated user's home and our target dirs
+    # are owned by it *before* we do any sudo -u openclaw that creates files (mkdir, npm writes,
+    # appending to .bashrc/.profile, etc.). This defeats the common cloud-init + system-user
+    # timing/ownership race.
+    chown -R openclaw:openclaw /home/openclaw 2>/dev/null || true
+    mkdir -p /home/openclaw/.openclaw/bin /home/openclaw/.npm 2>/dev/null || true
+    chown -R openclaw:openclaw /home/openclaw 2>/dev/null || true
+    # Clean any stale root-owned npm state from previous partial attempts (helps the "root-owned files" cache warning).
+    rm -rf /home/openclaw/.npm/_logs 2>/dev/null || true
 
     # 1. Reinforce PATH for the dedicated user (covers sudo -u and future login shells)
     sudo -u openclaw bash -c '

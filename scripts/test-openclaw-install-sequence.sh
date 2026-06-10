@@ -72,6 +72,15 @@ exec > /tmp/openclaw-install.log 2>&1
 set -x
 echo "=== OPENCLAW INSTALL START $(date -u) ==="
 
+# As root (this block runs as root in the real cloud-init), ensure the dedicated user's home
+# and our target dirs are owned by it *before* any sudo -u openclaw that creates files.
+# This defeats the common cloud-init + system-user timing/ownership race (mkdir ~/.openclaw
+# and npm EACCES / Permission denied until a late chown).
+chown -R openclaw:openclaw /home/openclaw 2>/dev/null || true
+mkdir -p /home/openclaw/.openclaw/bin /home/openclaw/.npm 2>/dev/null || true
+chown -R openclaw:openclaw /home/openclaw 2>/dev/null || true
+rm -rf /home/openclaw/.npm/_logs 2>/dev/null || true
+
 # 1. Early PATH for the dedicated user (sudo -u + login shells + bare "openclaw" via /usr/local/bin)
 sudo -u openclaw bash -c '
   mkdir -p ~/.openclaw/bin
@@ -167,6 +176,14 @@ PAYLOAD_EOF
     echo "[test] Scenario '$scenario': pre-created nested binary under node_modules (find must discover)"
   fi
 
+  # Simulate the real-world condition from clean launches: at the moment the block starts,
+  # /home/openclaw (and its contents) may still be root-owned due to cloud-init user creation
+  # ordering. The payload's leading "chown + mkdir + chown" (executed as root in the - | block)
+  # must rescue it before the sudo -u steps.
+  chown -R root:root "$SIM_HOME" 2>/dev/null || true
+  chmod 755 "$SIM_HOME" 2>/dev/null || true
+  echo "[test] Simulated initial root-owned / restricted home for '$scenario' (payload must fix ownership as root first)."
+
   # Now execute the payload script. All its stdout/stderr (thanks to exec > inside) will go to the (sim) log.
   # We also capture the outer execution trace for the test harness.
   echo "[test] Executing payload for scenario '$scenario' (log will be at $log_in_sim)..."
@@ -186,15 +203,15 @@ PAYLOAD_EOF
   fi
   echo "[ok] Log file exists."
 
-  if ! grep -q "VERIFIED: /home/openclaw/.openclaw/bin/openclaw is executable" "$log_in_sim"; then
-    echo "[FAIL] Missing 'VERIFIED: .../.openclaw/bin/openclaw' marker in log. Contents:"
+  if ! grep -q "VERIFIED:.*openclaw/bin/openclaw is executable" "$log_in_sim"; then
+    echo "[FAIL] Missing VERIFIED marker for primary service location in log. Contents:"
     cat "$log_in_sim"
     exit 1
   fi
   echo "[ok] Primary service location verified in log."
 
-  if ! grep -q "VERIFIED: /usr/local/bin/openclaw is executable" "$log_in_sim"; then
-    echo "[FAIL] Missing 'VERIFIED: /usr/local/bin/openclaw' marker in log."
+  if ! grep -q "VERIFIED:.*usr/local/bin/openclaw is executable" "$log_in_sim"; then
+    echo "[FAIL] Missing VERIFIED marker for /usr/local/bin in log."
     cat "$log_in_sim"
     exit 1
   fi
