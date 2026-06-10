@@ -447,7 +447,7 @@ runcmd:
     # Ensure the config JSON is present with correct content (write_files can race with home creation/ownership for the system user).
     # This is the reliable path, using the same dedent pattern as the wrapper creations.
     if [ ! -f /home/openclaw/.openclaw/openclaw.json ]; then
-      cat > /home/openclaw/.openclaw/openclaw.json << 'JSONEOF' | sed 's/^    //'
+      cat > /home/openclaw/.openclaw/openclaw.json << 'JSONEOF' | sed 's/^[[:space:]]*//'
 __INSTALL_BLOCK_OPENCLAW_JSON__
       JSONEOF
       chmod 600 /home/openclaw/.openclaw/openclaw.json || true
@@ -508,7 +508,7 @@ __INSTALL_BLOCK_OPENCLAW_JSON__
     # Create the stable wrapper. The real pnpm shim is at the standard global bin
     # location after our `pnpm add -g` (we exported the PATH during that step so pnpm
     # used ~/.local/share/pnpm/bin).
-    cat > "$CANDIDATE" << 'WRAPPER' | sed 's/^    //'
+    cat > "$CANDIDATE" << 'WRAPPER' | sed 's/^[[:space:]]*//'
     #!/usr/bin/env sh
     export PATH="$HOME/.local/share/pnpm/bin:$PATH"
     exec "$HOME/.local/share/pnpm/bin/openclaw" "$@"
@@ -527,7 +527,7 @@ __INSTALL_BLOCK_OPENCLAW_JSON__
     # Ensure a stable wrapper is at the canonical location (belt-and-suspenders in case the /tmp script took fallback or resolution failed).
     # The wrapper sets the pnpm bin in PATH and execs the real pnpm shim.
     CANDIDATE="/home/openclaw/.openclaw/bin/openclaw"
-    cat > "$CANDIDATE" << 'WRAPPER' | sed 's/^    //'
+    cat > "$CANDIDATE" << 'WRAPPER' | sed 's/^[[:space:]]*//'
     #!/usr/bin/env sh
     export PATH="$HOME/.local/share/pnpm/bin:$PATH"
     exec "$HOME/.local/share/pnpm/bin/openclaw" "$@"
@@ -608,7 +608,7 @@ __INSTALL_BLOCK_OPENCLAW_JSON__
   # wrapper creations) to avoid quoting/indent hell inside the YAML - | block and the
   # bash -c string, which was causing syntax errors and broken execution.
   - |
-    cat > /tmp/adopt-openclaw-config.sh << 'ADOPTSCRIPT' | sed 's/^    //'
+    cat > /tmp/adopt-openclaw-config.sh << 'ADOPTSCRIPT' | sed 's/^[[:space:]]*//'
     #!/bin/bash
     set -x
     export PATH="$HOME/.local/share/pnpm/bin:$PATH"
