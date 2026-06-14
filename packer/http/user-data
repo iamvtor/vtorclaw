@@ -31,6 +31,7 @@ autoinstall:
     - |
       sed -i 's/^#*PasswordAuthentication .*/PasswordAuthentication yes/' /target/etc/ssh/sshd_config
       sed -i 's/^#*PermitRootLogin .*/PermitRootLogin no/' /target/etc/ssh/sshd_config
+      sed -i 's/^#*Subsystem sftp.*/Subsystem sftp \/usr\/lib\/openssh\/sftp-server/' /target/etc/ssh/sshd_config
       echo "AllowUsers ubuntu" >> /target/etc/ssh/sshd_config
     - "echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/ubuntu"
     - "chmod 440 /target/etc/sudoers.d/ubuntu"
@@ -41,3 +42,4 @@ autoinstall:
     - "chroot /target ufw allow 22/tcp || true"
     - "chroot /target ufw --force disable || true"
     - "chroot /target systemctl restart ssh || true"
+    - "chmod 1777 /target/tmp || true"
