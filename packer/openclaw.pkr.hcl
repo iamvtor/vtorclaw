@@ -146,9 +146,10 @@ source "hyperv-iso" "openclaw" {
   #
   # Critical for autoinstall to actually engage (instead of dropping to interactive language chooser):
   # - Put autoinstall/ds params AFTER the "---" separator.
-  # - Use the nocloud-net;seedfrom= form (more reliable for early network fetch in live env).
+  # - Use the nocloud;s= form (works well for this http_content + live ISO case).
+  # - Include `ip=dhcp` so the kernel brings up networking very early (before the ds fetch in initramfs).
   # - Quote the ds= value with **double quotes** in the GRUB command (ds=\"...\") so the ; is not
-  #   interpreted by GRUB as a command separator. Single quotes didn't work in testing.
+  #   interpreted by GRUB as a command separator.
   # - set gfxpayload=keep to match the stock menuentry.
   #
   # Watch the Packer output for these two lines (they appear after "Starting build ..."):
@@ -170,7 +171,7 @@ source "hyperv-iso" "openclaw" {
     "<wait5s>",
     "c<wait2s>",
     "set gfxpayload=keep<enter><wait>",
-    "linux /casper/vmlinuz --- autoinstall ds=\"nocloud-net;seedfrom=http://{{ .HTTPIP }}:{{ .HTTPPort }}/\"<wait>",
+    "linux /casper/vmlinuz --- autoinstall ip=dhcp ds=\"nocloud;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/\"<wait>",
     "<enter><wait2s>",
     "initrd /casper/initrd<wait>",
     "<enter><wait>",
