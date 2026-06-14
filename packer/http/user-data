@@ -4,6 +4,9 @@ autoinstall:
   locale: en_US.UTF-8
   keyboard:
     layout: us
+  storage:
+    layout:
+      name: direct
   network:
     version: 2
     ethernets:
