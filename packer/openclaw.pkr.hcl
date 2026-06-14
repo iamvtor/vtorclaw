@@ -142,15 +142,13 @@ source "hyperv-iso" "openclaw" {
   #
   # {{ .HTTPIP }} and {{ .HTTPPort }} are substituted by Packer at runtime.
   boot_command = [
-    "<wait5s>",
-    "c<wait2s>",
+    "<wait10s>",
+    "c<wait3s>",
     "set gfxpayload=keep<enter><wait>",
-    "linux /casper/vmlinuz --- autoinstall ip=dhcp net.ifnames=0 biosdevname=0 ds=nocloud\\;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ <wait>",
-    "<enter><wait2s>",
-    "initrd /casper/initrd<wait>",
-    "<enter><wait>",
-    "boot<wait>",
-    "<enter>"
+    "linux /casper/vmlinuz --- autoinstall 'ds=nocloud;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/'<wait>",
+    "<enter><wait5s>",
+    "initrd /casper/initrd<enter><wait>",
+    "boot<enter>"
   ]
   boot_wait = "5s"
 
