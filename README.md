@@ -159,24 +159,29 @@ For the combination you are using (separate free Google account for Gemini + X P
 
 LiteLLM is only useful later if you want one unified endpoint + fallbacks when adding many more providers. It is **not** required for your current 2–3. The `vtorclaw.example.yaml` now shows the direct style by default.
 
-## Provisioning Choices (Multipass + Cloud-Init vs Packer)
+## Provisioning Choices (Multipass + Cloud-Init vs Packer + Native Hyper-V)
 
-We default to **Multipass + cloud-init** (with a declarative spec) because it delivers the best zero-touch experience on Windows today while remaining highly declarative for this use case.
+Two fully supported paths exist. Both are driven by the same `vtorclaw.yaml` + `secrets.yaml` declarative spec.
 
-**Multipass + cloud-init (current primary path)**
-- Pros: Native Windows experience (Hyper-V), cloud-init is purpose-built for exactly this (users, packages, systemd units, write_files, runcmd), extremely fast iteration and feedback, simple one-binary dependency, easy to make RAM/CPU/disk fully configurable via the spec or CLI, great `multipass` management commands (shell, delete, snapshot, etc.).
-- Cons: Some imperative steps live in `runcmd` (cloud-init is "declarative enough" but not pure like Nix), each launch re-runs the provisioning steps (acceptable for this workload).
+**Multipass + cloud-init (primary day-to-day path)**
+- Pros: One-command zero-touch on Windows (Hyper-V), excellent management UX (`multipass shell/info/delete`), cloud-init handles users + packages + units + the full install sequence.
+- Cons: Every launch re-runs the Node/pnpm/Docker build steps (a few minutes); multipass's guest readiness channel can be sensitive to heavy first-boot work or custom default users.
 
-**Packer (golden images)**
-- Pros: True reproducible golden images (pre-install OpenClaw, pre-build browser images, pre-configure service and user), versionable artifacts, faster subsequent launches, more "infrastructure-as-code" feel, can be used directly with Hyper-V or fed into Multipass.
-- Cons: Heavier upfront (Packer + Hyper-V builder config can be fiddly on Windows), longer build times when you change something, still needs a launcher script for per-user secrets/config (you end up with a hybrid anyway), extra tool to install.
+**Packer golden image + native Hyper-V (no multipass at all)**
+- Build once (or when you change the base image) with `packer/openclaw.pkr.hcl`. This produces a standalone bootable `.vhdx` that already contains:
+  - Ubuntu 24.04
+  - Node 24 (NodeSource) + pnpm + `pnpm add -g openclaw` + stable wrapper + symlinks to `~/.openclaw/bin` and `/usr/local/bin`
+  - Pre-built `openclaw-sandbox` and `openclaw-sandbox-browser` Docker images
+  - Dedicated `openclaw` system user + skeleton dirs + hardened `openclaw-gateway.service`
+- For each new VM you create a tiny "CIDATA" seed VHDX (using `scripts/new-cidata-drive.ps1` + a thin overlay cloud-config) that supplies only the per-instance pieces: your gateway token, `GOOGLE_API_KEY` etc., the real `openclaw.json` from your spec, your host SSH public key, and the `users:` + `system_info.default_user` block that makes `openclaw` the direct login user with passwordless key auth.
+- Then use plain Hyper-V PowerShell (`New-VM`, `Add-VMHardDiskDrive` for the CIDATA seed, `Start-VM`) or Hyper-V Manager. No multipass client, no multipass data directory, no guest service / KVP races for the heavy work.
+- Pros: Heavy work is done exactly once, subsequent VMs boot very fast, full control with native Hyper-V tooling, easy to keep versioned golden images, excellent match for "I want packer only, just Hyper-V".
+- Cons: One extra tool (Packer) and a one-time build step; you manage the VMs with `New-VM` / Hyper-V Manager instead of `multipass` commands (you can still add a thin wrapper script if you want a one-command `hyperv-launch` experience).
 
-**Hybrid (recommended evolution path)**
-- Use Packer to build a base "openclaw-golden" image (everything baked except user-specific secrets and final config overrides).
-- Use Multipass + a thin cloud-init layer (driven by your `vtorclaw.yaml`) for the final declarative customization and secrets injection.
-- This gives you both golden-image speed/reproducibility and easy per-deployment configuration.
+See `packer/openclaw.pkr.hcl`, `packer/thin-overlay.example.yaml`, and `scripts/new-cidata-drive.ps1` for the artifacts and usage. The same declarative spec shape works for both paths.
 
-If you prefer starting with Packer (or the hybrid), say the word and we'll add a `packer/` directory and adjust the launcher. Current scaffolding focuses on the Multipass + cloud-init path for fastest progress toward zero-touch.
+**Hybrid**
+You can also feed the Packer golden VHDX into Multipass (via a custom image) or use the thin overlay CIDATA approach with a cloud image you downloaded manually. The Packer path was added specifically because you asked "is there a way to use packer only without multipass? just hyper-v?" — yes, and the artifacts above give you exactly that.
 
 ### LiteLLM (optional later)
 

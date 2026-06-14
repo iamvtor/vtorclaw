@@ -39,7 +39,7 @@ The browser runs in its own hardened container with the usual OpenClaw protectio
 - Optional Tailscale for seamless access from Windows without thinking about networking.
 
 ## Future / Optional Improvements
-- Packer golden image (base layer) + thin cloud-init overlay.
+- Packer golden image (base layer) + thin cloud-init overlay via native Hyper-V (New-VM + CIDATA seed disk) — now implemented in `packer/` + `scripts/new-cidata-drive.ps1`. This path completely removes Multipass while preserving the declarative spec and "openclaw as default user + injected host key" behavior.
 - Nix inside the guest (via nix-openclaw) for even more declarative management of the gateway binary + plugins on top of the Docker sandbox layer.
 - Post-launch verification step that runs `openclaw security audit --fix`.
 - Snapshot / golden VM export helpers.

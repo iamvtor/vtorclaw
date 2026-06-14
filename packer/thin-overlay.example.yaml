@@ -1,0 +1,129 @@
+# thin-overlay.example.yaml
+#
+# This is the *lightweight* cloud-config you feed to scripts/new-cidata-drive.ps1
+# (or hand-attach as user-data) when using a Packer golden image.
+#
+# The golden image (built by packer/openclaw.pkr.hcl) already contains:
+#   - Node 24 + pnpm + openclaw (pnpm global) + stable wrappers + /usr/local/bin link
+#   - Pre-built openclaw-sandbox and openclaw-sandbox-browser Docker images
+#   - The openclaw system user skeleton + /home/openclaw
+#   - The hardened openclaw-gateway.service (with a placeholder token)
+#
+# All this file needs to do on first boot of a new VM from the golden is:
+#   - Make openclaw the default login user (console + ssh)
+#   - Inject your host SSH public key so you get passwordless direct access as openclaw
+#   - Write the real openclaw.json (with your strong token + declarative config from vtorclaw.yaml)
+#   - Inject secrets (GOOGLE_API_KEY etc.) into the service Environment
+#   - Adopt + start the service (very fast because the heavy bits are pre-baked)
+#
+# You can generate most of this automatically by extending the existing logic in
+# scripts/launch.ps1 (the part that builds $openclawJson, $secretEnvLines, and the
+# ssh key block) and emitting only the users + system_info + write_files + tiny runcmd
+# sections instead of the full "install everything" template.
+
+#cloud-config
+
+users:
+  - name: openclaw
+    gecos: "OpenClaw Gateway"
+    system: true
+    shell: /bin/bash
+    lock_passwd: true
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    groups: [docker]
+    homedir: /home/openclaw
+    ssh_authorized_keys:
+      # Paste your host public key here (or the one from ssh.public_key in your spec).
+      # This is what lets you do direct SSH / port forwards as openclaw with no password.
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... your-key-here comment"
+
+# Make `ssh openclaw@...`, console login, and `multipass shell` style flows
+# (when not using multipass) land directly as the dedicated user.
+system_info:
+  default_user:
+    name: openclaw
+    lock_passwd: true
+
+write_files:
+  # The real openclaw.json for this instance (token + your declarative overrides).
+  # The launcher normally builds this from vtorclaw.yaml + secrets.yaml.
+  - path: /home/openclaw/.openclaw/openclaw.json
+    owner: openclaw:openclaw
+    permissions: "0600"
+    content: |
+      {
+        "gateway": {
+          "mode": "local",
+          "port": 18789,
+          "bind": "loopback",
+          "auth": {
+            "mode": "token",
+            "token": "REPLACE_WITH_YOUR_GENERATED_STRONG_TOKEN"
+          }
+        },
+        "agents": {
+          "defaults": {
+            "sandbox": {
+              "mode": "non-main",
+              "backend": "docker",
+              "browser": { "autoStart": true }
+            }
+          }
+        }
+        // ... merge any openclaw.config from your vtorclaw.yaml here (except gateway)
+      }
+
+  # Optional but nice: make sure the service has the right secrets in Environment.
+  # You can also do this by writing a drop-in unit file under /etc/systemd/system/openclaw-gateway.service.d/
+  - path: /etc/systemd/system/openclaw-gateway.service
+    owner: root:root
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=OpenClaw Gateway (dedicated user)
+      After=network-online.target docker.service
+      Wants=network-online.target
+      Requires=docker.service
+
+      [Service]
+      Type=simple
+      User=openclaw
+      Group=openclaw
+      WorkingDirectory=/home/openclaw
+      Environment=HOME=/home/openclaw
+      Environment=OPENCLAW_GATEWAY_TOKEN=REPLACE_WITH_YOUR_GENERATED_STRONG_TOKEN
+      Environment=GOOGLE_API_KEY=REPLACE_FROM_SECRETS
+      # Add more as needed: Environment=TELEGRAM_BOT_TOKEN=...
+      ExecStart=/home/openclaw/.openclaw/bin/openclaw gateway run
+      Restart=on-failure
+      RestartSec=5s
+
+      ProtectSystem=strict
+      ProtectHome=read-only
+      ReadWritePaths=/home/openclaw/.openclaw
+      PrivateTmp=true
+      NoNewPrivileges=true
+
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  # The golden image already did the big chown + installs. We just need to adopt + start.
+  - chown -R openclaw:openclaw /home/openclaw || true
+  - systemctl daemon-reload
+  - systemctl enable --now openclaw-gateway.service
+  - sudo -u openclaw /usr/local/bin/openclaw doctor --fix || true
+  - sudo -u openclaw /usr/local/bin/openclaw gateway status || true
+
+final_message: |
+  OpenClaw (Packer golden + thin overlay) is ready.
+
+  Log in directly as the dedicated user (key injected above):
+    ssh openclaw@<ip-or-tailscale-name>
+
+  Or from the Hyper-V console (should land as openclaw thanks to system_info.default_user).
+
+  Inside:
+    openclaw gateway status
+    openclaw doctor
+    openclaw security audit
