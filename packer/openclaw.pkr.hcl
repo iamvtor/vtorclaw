@@ -174,8 +174,22 @@ source "hyperv-iso" "openclaw" {
   boot_command = [
     "<wait15s>",                 # give the GRUB menu plenty of time to appear and stabilize
     "e<wait3s>",                 # edit the selected menu entry
-    "<down><wait><down><wait><down><wait><down><wait><end><wait>",  # 4 downs + end (adjust this count if needed)
-    "<bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs>",
+    #
+    # Your observation is spot on:
+    # The navigation keys (<down>s + <end>) are landing the cursor in the wrong place,
+    # so the " autoinstall ..." text (and previous "2221" garbage) ends up at the
+    # beginning of the entry or on a non-kernel line.
+    # GRUB then treats "autoinstall" as a command on that line → "can't find command".
+    #
+    # Start with 2 downs (very common for 24.04 live-server GRUB edit).
+    # If it still inserts in the wrong spot, try the 3-down or 4-down variants below
+    # by editing this file locally and re-running (no need to wait for me).
+    #
+    "<down><wait><down><wait><end><wait>",   # 2 downs + end  (try this first)
+    # "<down><wait><down><wait><down><wait><end><wait>",   # 3 downs + end
+    # "<down><wait><down><wait><down><wait><down><wait><end><wait>",  # 4 downs + end
+    #
+    "<bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs>",
     " autoinstall ds=nocloud\\;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ---<wait>",
     "<f10><wait>"
   ]
