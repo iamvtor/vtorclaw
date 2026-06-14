@@ -1,8 +1,4 @@
 #cloud-config
-# Prevent cloud-init from marking the initial password as expired (which causes
-# the "You are required to change your password immediately" prompt on first
-# login, and can interfere with non-interactive SSH/sftp sessions that Packer
-# uses for script uploads).
 chpasswd:
   expire: false
 
@@ -15,10 +11,6 @@ autoinstall:
     layout:
       name: direct
   packages:
-    # These provide the Hyper-V guest daemons (KVP etc.) so the host can reliably
-    # query the guest IP for Packer's SSH communicator over the virtual switch.
-    # Without them, even when sshd is up and listening, the hyperv-iso builder
-    # often cannot discover the guest IP (172.25.230.176 in your case) and times out.
     - linux-tools-virtual
     - linux-cloud-tools-virtual
   network:
@@ -35,32 +27,21 @@ autoinstall:
     install-server: true
     allow-pw: true
   late-commands:
-    - |
-      sed -i 's/^#*PasswordAuthentication .*/PasswordAuthentication yes/' /target/etc/ssh/sshd_config
-      sed -i 's/^#*PermitRootLogin .*/PermitRootLogin no/' /target/etc/ssh/sshd_config
-      # Ensure sftp subsystem is correctly set (find the actual binary in case path differs)
-      SFTP=$(find /target/usr -name sftp-server 2>/dev/null | head -1)
-      if [ -n "$SFTP" ]; then
-        sed -i "s|^#*Subsystem sftp.*|Subsystem sftp $SFTP|" /target/etc/ssh/sshd_config
-        chmod +x "$SFTP" || true
-      fi
-      echo "AllowUsers ubuntu" >> /target/etc/ssh/sshd_config
-      # Make sure sftp works for uploads
-      echo "Subsystem sftp config:" >> /target/var/log/late-commands.log || true
-      grep -E 'Subsystem sftp' /target/etc/ssh/sshd_config >> /target/var/log/late-commands.log || true
+    - "sed -i 's/^#*PasswordAuthentication .*/PasswordAuthentication yes/' /target/etc/ssh/sshd_config"
+    - "sed -i 's/^#*PermitRootLogin .*/PermitRootLogin no/' /target/etc/ssh/sshd_config"
+    - "sed -i 's/^#*Subsystem sftp.*/Subsystem sftp /usr/lib/openssh/sftp-server/' /target/etc/ssh/sshd_config"
+    - "chmod +x /target/usr/lib/openssh/sftp-server || true"
+    - "echo 'AllowUsers ubuntu' >> /target/etc/ssh/sshd_config"
     - "echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/ubuntu"
     - "chmod 440 /target/etc/sudoers.d/ubuntu"
     - "chroot /target systemctl enable --now ssh || true"
     - "echo 'ubuntu:$6$VKeUXi/iUw7gj5/C$Ok5ZA.fjMcZFG/GAkDz9LWUWvCi9Gdo4KlKINAkC//zhB3yOOPrk4Ws8iFjozEa7WE2QBpuTtPy6ugsWnTUh01' | chpasswd -e -R /target || true"
     - "chroot /target chage -d 0 -m 0 -M 99999 -I -1 ubuntu || true"
     - "chroot /target passwd -u ubuntu || true"
-    - "chroot /target chage -l ubuntu >> /target/var/log/late-commands.log || true"
-    # Force last password change date to 0 in shadow to ensure no "must change on first login" prompt
-    - "sed -i 's/^\(ubuntu:[^:]*\):[^:]*:/\1:0:/' /target/etc/shadow || true"
     - "chroot /target ufw allow 22/tcp || true"
     - "chroot /target ufw --force disable || true"
     - "chroot /target systemctl restart ssh || true"
     - "chmod 1777 /target/tmp || true"
-    # Helpful markers visible on the console/login screen so you know where autoinstall ended
+    # Markers so you see on the console when autoinstall/late-commands are done
     - "echo '=== LATE-COMMANDS COMPLETE (autoinstall done) ===' | tee /target/etc/motd.d/late-commands-done /dev/ttyS0 /dev/tty0 2>/dev/null || true"
     - "echo 'cloud-init is now finished. Packer will take over via SSH for the rest of the build.' | tee -a /target/etc/motd.d/late-commands-done /dev/ttyS0 /dev/tty0 2>/dev/null || true"
