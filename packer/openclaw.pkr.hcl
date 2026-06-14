@@ -163,6 +163,9 @@ source "hyperv-iso" "openclaw" {
   # For robustness during long package installs:
   ssh_handshake_attempts = 50
 
+  # Helpful for debugging upload issues: force remote temp to /tmp and add a small test step
+  # The test step verifies that scp/sftp uploads work from the host to the guest.
+
   # VM resources for the *build* VM (not the final golden characteristics).
   cpus      = var.cpus
   memory    = var.memory
@@ -186,7 +189,22 @@ source "hyperv-iso" "openclaw" {
 build {
   sources = ["source.hyperv-iso.openclaw"]
 
-  # 0. Basic hygiene + Docker (we will enable it properly later too).
+  # 0. Tiny test provisioner to verify that script upload (scp/sftp) works from the host.
+  #    If this fails with "Error uploading script", the problem is still in the guest's sftp setup or /tmp perms.
+  provisioner "shell" {
+    inline = [
+      "echo '=== PACKER UPLOAD TEST ==='",
+      "whoami",
+      "id",
+      "ls -ld /tmp",
+      "echo 'upload-test-ok' > /tmp/packer-upload-test.txt",
+      "cat /tmp/packer-upload-test.txt",
+      "echo '=== PACKER UPLOAD TEST END ==='"
+    ]
+    remote_folder = "/tmp"
+  }
+
+  # 1. Basic hygiene + Docker (we will enable it properly later too).
   provisioner "shell" {
     inline = [
       "set -e",
@@ -195,6 +213,7 @@ build {
       "sudo systemctl enable --now docker || true",
       "sudo usermod -aG docker ubuntu || true"
     ]
+    remote_folder = "/tmp"
   }
 
   # 1. Node 24 via NodeSource + corepack + pnpm (matches the exact sequence used by the multipass launcher).

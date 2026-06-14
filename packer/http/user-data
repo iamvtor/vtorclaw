@@ -31,8 +31,16 @@ autoinstall:
     - |
       sed -i 's/^#*PasswordAuthentication .*/PasswordAuthentication yes/' /target/etc/ssh/sshd_config
       sed -i 's/^#*PermitRootLogin .*/PermitRootLogin no/' /target/etc/ssh/sshd_config
-      sed -i 's/^#*Subsystem sftp.*/Subsystem sftp \/usr\/lib\/openssh\/sftp-server/' /target/etc/ssh/sshd_config
+      # Ensure sftp subsystem is correctly set (find the actual binary in case path differs)
+      SFTP=$(find /target/usr -name sftp-server 2>/dev/null | head -1)
+      if [ -n "$SFTP" ]; then
+        sed -i "s|^#*Subsystem sftp.*|Subsystem sftp $SFTP|" /target/etc/ssh/sshd_config
+        chmod +x "$SFTP" || true
+      fi
       echo "AllowUsers ubuntu" >> /target/etc/ssh/sshd_config
+      # Make sure sftp works for uploads
+      echo "Subsystem sftp config:" >> /target/var/log/late-commands.log || true
+      grep -E 'Subsystem sftp' /target/etc/ssh/sshd_config >> /target/var/log/late-commands.log || true
     - "echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/ubuntu"
     - "chmod 440 /target/etc/sudoers.d/ubuntu"
     - "chroot /target systemctl enable --now ssh || true"
