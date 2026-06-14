@@ -145,7 +145,7 @@ source "hyperv-iso" "openclaw" {
     "<wait10s>",
     "c<wait3s>",
     "set gfxpayload=keep<enter><wait>",
-    "linux /casper/vmlinuz --- autoinstall ip=dhcp net.ifnames=0 biosdevname=0 ds=\"nocloud-net;seedfrom=http://{{ .HTTPIP }}:{{ .HTTPPort }}/\"<wait>",
+    "linux /casper/vmlinuz --- autoinstall ip=dhcp net.ifnames=0 biosdevname=0 ds=\"nocloud-net;seedfrom=http://{{ .HTTPIP }}:{{ .HTTPPort }}/\"<wait>",  # this exact form (nocloud-net;seedfrom + double quotes + net params) got us to "Connected to SSH!" multiple times previously
     "<enter><wait5s>",
     "initrd /casper/initrd<enter><wait>",
     "boot<enter>"
