@@ -174,12 +174,17 @@ source "hyperv-iso" "openclaw" {
   boot_command = [
     "<wait15s>",                 # give the GRUB menu plenty of time to appear and stabilize
     "e<wait3s>",                 # edit the selected menu entry
+    "<numlock><wait>",           # force numlock OFF so that <down>/<end> (numpad-based in hyperv) move the cursor instead of typing digits
     #
-    # Your observation is spot on:
-    # The navigation keys (<down>s + <end>) are landing the cursor in the wrong place,
-    # so the " autoinstall ..." text (and previous "2221" garbage) ends up at the
-    # beginning of the entry or on a non-kernel line.
-    # GRUB then treats "autoinstall" as a command on that line → "can't find command".
+    # Your observation is exactly right:
+    # Packer's <down> and <end> sequences (via the hyperv-iso builder) are delivered as the
+    # numeric keypad equivalents. When numlock is on in the live ISO environment, they literally
+    # type the characters "2" (for down) and "1" (for end) instead of moving the cursor.
+    # That's why you see "2221" (down down down end) being inserted as text at the beginning
+    # of whatever line the cursor is on, instead of navigating to the linux kernel line.
+    #
+    # We now explicitly toggle numlock off right after 'e'.
+    # Then the navigation should actually move the cursor.
     #
     # Start with 2 downs (very common for 24.04 live-server GRUB edit).
     # If it still inserts in the wrong spot, try the 3-down or 4-down variants below
