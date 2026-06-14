@@ -142,25 +142,44 @@ source "hyperv-iso" "openclaw" {
   # The {{ .HTTPIP }} and {{ .HTTPPort }} are substituted by Packer at runtime.
   #
   # This sequence is notoriously fragile across Ubuntu point releases because it relies on
-  # sending keystrokes to the GRUB menu editor. We use:
-  #   - generous waits
-  #   - precise <down> + <end> to land on the linux kernel line
-  #   - backspaces to clear default "quiet splash" etc. at end of line
-  #   - proper escaping (\\;) for the nocloud datasource separator so GRUB/cmdline
-  #     doesn't misinterpret the parameters
+  # sending keystrokes to the GRUB menu editor.
   #
-  # If this still flakes, the most reliable alternative for Hyper-V is to stop using
-  # the live ISO + GRUB hack entirely and base the golden on a pre-downloaded cloud
-  # .vhd from cloud-images.ubuntu.com (we can switch to that later).
+  # Key observations from your runs:
+  # - "2221" (or similar numbers) appearing then being deleted by the <bs> sequence = good,
+  #   the backspaces are now cleaning up garbage from previous bad edits or menu artifacts.
+  # - "can't find command autoinstall" = the text was successfully typed, but it landed on
+  #   the WRONG line in the GRUB editor (e.g. on the menuentry line, a comment, or initrd line
+  #   instead of the `linux /casper/vmlinuz ...` parameters line). GRUB then treats
+  #   "autoinstall ..." as an unknown command.
+  #
+  # The number of <down> needed is the main variable. For 24.04.4 live-server it is often
+  # 2, 3, or 4 downs to reach the linux kernel line after pressing 'e'.
+  #
+  # Current attempt below uses 4 downs + extra waits + aggressive backspaces.
+  # If it still fails, change the "<down><wait>" count (try 2 or 3) and re-run.
+  #
+  # Pro tip for debugging without full rebuilds:
+  #   Watch the Packer log for:
+  #     "Starting HTTP server on port XXXX"
+  #     "Host IP for the HyperV machine: 172.25.224.1"
+  #   Then when the VM is at the language/GRUB screen, manually connect in Hyper-V Manager,
+  #   press 'e' on the menu, navigate manually, and test appending:
+  #     " autoinstall ds=nocloud;s=http://172.25.224.1:8889/ ---"
+  #   (use the actual IP:port from that run). This lets you discover the exact <down> count
+  #   that works for this ISO without waiting for Packer to re-type everything.
+  #
+  # If this continues to be painful, the cleanest fix is to switch the whole template to
+  # use an official pre-installed cloud .vhd from cloud-images.ubuntu.com instead of the
+  # live ISO + GRUB hack. That path has no boot_command editing at all.
   boot_command = [
-    "<wait10s>",                 # give the GRUB menu plenty of time to appear
-    "e<wait2s>",                 # edit the selected menu entry
-    "<down><wait><down><wait><down><wait><end><wait>",   # move to the linux line and go to end
-    "<bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs>",
+    "<wait15s>",                 # give the GRUB menu plenty of time to appear and stabilize
+    "e<wait3s>",                 # edit the selected menu entry
+    "<down><wait><down><wait><down><wait><down><wait><end><wait>",  # 4 downs + end (adjust this count if needed)
+    "<bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs>",
     " autoinstall ds=nocloud\\;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ---<wait>",
     "<f10><wait>"
   ]
-  boot_wait = "10s"   # longer initial wait before we start sending keys
+  boot_wait = "15s"   # longer initial wait before we start sending keys
 
   # Communicator for all the shell provisioners below (after autoinstall finishes and SSH is up).
   communicator     = "ssh"
