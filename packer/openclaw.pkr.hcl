@@ -145,7 +145,7 @@ source "hyperv-iso" "openclaw" {
     "<wait5s>",
     "c<wait2s>",
     "set gfxpayload=keep<enter><wait>",
-    "linux /casper/vmlinuz --- autoinstall ip=dhcp ds=\"nocloud;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/\"<wait>",
+    "linux /casper/vmlinuz --- autoinstall ip=dhcp net.ifnames=0 biosdevname=0 ds=\"nocloud;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/\"<wait>",
     "<enter><wait2s>",
     "initrd /casper/initrd<wait>",
     "<enter><wait>",
@@ -158,10 +158,10 @@ source "hyperv-iso" "openclaw" {
   communicator     = "ssh"
   ssh_username     = "ubuntu"
   ssh_password     = local.build_password
-  ssh_timeout      = "30m"
+  ssh_timeout      = "45m"
   ssh_port         = 22
   # For robustness during long package installs:
-  ssh_handshake_attempts = 20
+  ssh_handshake_attempts = 50
 
   # VM resources for the *build* VM (not the final golden characteristics).
   cpus      = var.cpus

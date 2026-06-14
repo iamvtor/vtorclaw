@@ -10,9 +10,7 @@ autoinstall:
   network:
     version: 2
     ethernets:
-      any:
-        match:
-          name: "*"
+      eth0:
         dhcp4: true
         optional: true
   identity:
@@ -26,7 +24,13 @@ autoinstall:
     - |
       sed -i 's/^#*PasswordAuthentication .*/PasswordAuthentication yes/' /target/etc/ssh/sshd_config
       sed -i 's/^#*PermitRootLogin .*/PermitRootLogin no/' /target/etc/ssh/sshd_config
+      echo "AllowUsers ubuntu" >> /target/etc/ssh/sshd_config
     - "echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/ubuntu"
     - "chmod 440 /target/etc/sudoers.d/ubuntu"
     - "chroot /target systemctl enable --now ssh || true"
     - "echo 'ubuntu:$6$VKeUXi/iUw7gj5/C$Ok5ZA.fjMcZFG/GAkDz9LWUWvCi9Gdo4KlKINAkC//zhB3yOOPrk4Ws8iFjozEa7WE2QBpuTtPy6ugsWnTUh01' | chpasswd -e -R /target || true"
+    - "chroot /target chage -d 0 -M 99999 ubuntu || true"
+    - "chroot /target passwd -u ubuntu || true"
+    - "chroot /target ufw allow 22/tcp || true"
+    - "chroot /target ufw --force disable || true"
+    - "chroot /target systemctl restart ssh || true"
