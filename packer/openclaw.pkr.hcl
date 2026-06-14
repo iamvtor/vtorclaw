@@ -28,8 +28,12 @@
 # with native Hyper-V PowerShell + a small CIDATA seed disk for your vtorclaw.yaml
 # secrets + ssh key + default user bits. See the sibling hyperv launch guidance.
 #
-# The build uses the official Ubuntu 24.04 live server ISO + autoinstall via a
-# secondary virtual CD (cd_content) so the whole thing is unattended.
+# The build uses the official Ubuntu 24.04 live server ISO + autoinstall.
+# We serve the autoinstall config (user-data + meta-data) over Packer's built-in
+# temporary HTTP server (http_content) instead of a secondary CD/ISO. This removes
+# any dependency on external ISO creation tools (oscdimg, xorriso, etc.), which
+# makes the template work cleanly on Windows without installing the Windows ADK.
+#
 # Update the iso_url / iso_checksum when new point releases appear.
 
 packer {
@@ -86,12 +90,23 @@ locals {
 }
 
 source "hyperv-iso" "openclaw" {
-  # --- ISO + autoinstall via secondary CD (no manual interaction) ---
+  # --- ISO + autoinstall via Packer's temporary HTTP server (no external tools required) ---
+  # This is the portable approach that works on Windows without installing the Windows ADK
+  # or any ISO creation tools (oscdimg, xorriso, etc.).
+  #
+  # Packer will start a short-lived HTTP server during the build and serve the autoinstall
+  # files. The boot_command below tells the Ubuntu live installer to fetch the config from
+  # that HTTP server using the nocloud datasource.
+  #
+  # Previous version used cd_content (which generates a virtual ISO). That requires a CD
+  # creation tool (oscdimg on Windows). The http_content method below removes that dependency
+  # entirely, which is friendlier for a pure "packer + native Hyper-V on Windows" workflow.
   iso_url      = var.iso_url
   iso_checksum = var.iso_checksum
 
-  # Deliver autoinstall config on a virtual CD that the installer will see as nocloud datasource.
-  cd_content = {
+  # Serve the autoinstall cloud-config over HTTP instead of a secondary CD/ISO.
+  # Files will be available at http://<packer-http-ip>:<port>/
+  http_content = {
     "user-data" = <<-EOT
       #cloud-config
       autoinstall:
@@ -121,14 +136,17 @@ source "hyperv-iso" "openclaw" {
     EOT
   }
 
-  # Boot the live server ISO and tell it to autoinstall from the attached CD (nocloud).
-  # The exact boot_command can be sensitive to timing/ISO rev; the one below is a
-  # commonly working pattern for recent 24.04 live-server images.
+  # Boot the live server ISO and edit the kernel command line (GRUB edit) to pass the
+  # autoinstall directive pointing at Packer's HTTP server.
+  #
+  # The {{ .HTTPIP }} and {{ .HTTPPort }} are substituted by Packer at runtime.
+  # This is the standard pattern for fully unattended Ubuntu server installs in Packer
+  # on all platforms (especially Windows).
   boot_command = [
     "<wait5s>",
     "e<wait>",
     "<down><down><down><end>",
-    " autoinstall ds=nocloud;s=/cidata/ ---",
+    " autoinstall ds=nocloud;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ---",
     "<f10>"
   ]
   boot_wait = "5s"
