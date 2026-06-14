@@ -1,0 +1,24 @@
+#cloud-config
+autoinstall:
+  version: 1
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+  network:
+    version: 2
+    ethernets:
+      any:
+        match:
+          name: "*"
+        dhcp4: true
+        optional: true
+  identity:
+    hostname: openclaw-golden
+    username: ubuntu
+    password: "PackerBuildOnly-ChangeMe-9f3k2"
+  ssh:
+    install-server: true
+    allow-pw: true
+  late-commands:
+    - "echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/ubuntu"
+    - "chmod 440 /target/etc/sudoers.d/ubuntu"

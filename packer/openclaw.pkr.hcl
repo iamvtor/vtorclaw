@@ -93,53 +93,27 @@ source "hyperv-iso" "openclaw" {
   # This is the portable approach that works on Windows without installing the Windows ADK
   # or any ISO creation tools (oscdimg, xorriso, etc.).
   #
-  # Packer will start a short-lived HTTP server during the build and serve the autoinstall
-  # files. The boot_command below tells the Ubuntu live installer to fetch the config from
-  # that HTTP server using the nocloud datasource.
+  # Packer will start a short-lived HTTP server during the build and serve the contents
+  # of the local ./http/ directory. The boot_command below tells the Ubuntu live installer
+  # to fetch the config from that HTTP server using the nocloud datasource
+  # (ds=nocloud;s=http://.../ points at user-data + meta-data).
   #
-  # Previous version used cd_content (which generates a virtual ISO). That requires a CD
-  # creation tool (oscdimg on Windows). The http_content method below removes that dependency
-  # entirely, which is friendlier for a pure "packer + native Hyper-V on Windows" workflow.
+  # We use a small local http/ directory (standard for hyperv-iso + live server) rather than
+  # http_content or cd_content. This has proven the most reliable for getting the autoinstall
+  # seed to actually be fetched instead of falling back to the interactive installer.
   iso_url      = var.iso_url
   iso_checksum = var.iso_checksum
 
-  # Serve the autoinstall cloud-config over HTTP instead of a secondary CD/ISO.
-  # Files will be available at http://<packer-http-ip>:<port>/
-  http_content = {
-    "user-data" = <<-EOT
-      #cloud-config
-      autoinstall:
-        version: 1
-        locale: en_US.UTF-8
-        keyboard:
-          layout: us
-        network:
-          version: 2
-          ethernets:
-            any:
-              match:
-                name: "*"
-              dhcp4: true
-              optional: true
-        identity:
-          hostname: openclaw-golden
-          username: ubuntu
-          password: "${local.build_password}"
-        ssh:
-          install-server: true
-          allow-pw: true
-        late-commands:
-          - "echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/ubuntu"
-          - "chmod 440 /target/etc/sudoers.d/ubuntu"
-    EOT
-    "meta-data" = <<-EOT
-      instance-id: openclaw-golden-build
-      local-hostname: openclaw-golden
-    EOT
-  }
+  # Serve the autoinstall cloud-config over HTTP from the local ./http/ directory.
+  # Files (packer/http/user-data and meta-data) are served at the root of Packer's
+  # temporary HTTP server, e.g. http://<packer-http-ip>:<port>/user-data
+  #
+  # This is the classic, most reliable method with the hyperv-iso builder for Ubuntu
+  # live-server autoinstall (http_content was not actually registering the paths in testing).
+  http_directory = "http"
 
   # Boot via the GRUB console ('c') and issue explicit linux/initrd/boot with autoinstall
-  # datasource pointing at Packer's http_content (serves user-data + meta-data over HTTP).
+  # datasource pointing at Packer's temporary HTTP server (serves the local ./http/ directory).
   #
   # We use the 'c' method because 'e' + cursor keys are unreliable on the hyperv-iso builder
   # (numpad scan codes + numlock produce digits instead of movement; <numlock> isn't a special key).
