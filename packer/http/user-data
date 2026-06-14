@@ -54,6 +54,9 @@ autoinstall:
     - "echo 'ubuntu:$6$VKeUXi/iUw7gj5/C$Ok5ZA.fjMcZFG/GAkDz9LWUWvCi9Gdo4KlKINAkC//zhB3yOOPrk4Ws8iFjozEa7WE2QBpuTtPy6ugsWnTUh01' | chpasswd -e -R /target || true"
     - "chroot /target chage -d 0 -m 0 -M 99999 -I -1 ubuntu || true"
     - "chroot /target passwd -u ubuntu || true"
+    - "chroot /target chage -l ubuntu >> /target/var/log/late-commands.log || true"
+    # Force last password change date to 0 in shadow to ensure no "must change on first login" prompt
+    - "sed -i 's/^\(ubuntu:[^:]*\):[^:]*:/\1:0:/' /target/etc/shadow || true"
     - "chroot /target ufw allow 22/tcp || true"
     - "chroot /target ufw --force disable || true"
     - "chroot /target systemctl restart ssh || true"

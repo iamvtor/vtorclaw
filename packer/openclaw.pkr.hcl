@@ -191,15 +191,16 @@ build {
 
   # 0. Tiny test provisioner to verify that script upload (scp/sftp) works from the host.
   #    If this fails with "Error uploading script", the problem is still in the guest's sftp setup or /tmp perms.
+  #    Output also echoed to console (ttyS0/tty0) for visibility in Hyper-V.
   provisioner "shell" {
     inline = [
-      "echo '=== PACKER UPLOAD TEST ==='",
-      "whoami",
-      "id",
-      "ls -ld /tmp",
+      "echo '=== PACKER UPLOAD TEST ===' | tee -a /dev/ttyS0 /dev/tty0 2>/dev/null || true",
+      "whoami | tee -a /dev/ttyS0 /dev/tty0 2>/dev/null || true",
+      "id | tee -a /dev/ttyS0 /dev/tty0 2>/dev/null || true",
+      "ls -ld /tmp | tee -a /dev/ttyS0 /dev/tty0 2>/dev/null || true",
       "echo 'upload-test-ok' > /tmp/packer-upload-test.txt",
-      "cat /tmp/packer-upload-test.txt",
-      "echo '=== PACKER UPLOAD TEST END ==='"
+      "cat /tmp/packer-upload-test.txt | tee -a /dev/ttyS0 /dev/tty0 2>/dev/null || true",
+      "echo '=== PACKER UPLOAD TEST END ===' | tee -a /dev/ttyS0 /dev/tty0 2>/dev/null || true"
     ]
     remote_folder = "/tmp"
   }
