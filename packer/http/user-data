@@ -10,6 +10,8 @@ autoinstall:
   packages:
     # These provide the Hyper-V guest daemons (KVP etc.) so the host can reliably
     # query the guest IP for Packer's SSH communicator over the virtual switch.
+    # Without them, even when sshd is up and listening, the hyperv-iso builder
+    # often cannot discover the guest IP (172.25.230.176 in your case) and times out.
     - linux-tools-virtual
     - linux-cloud-tools-virtual
   network:
