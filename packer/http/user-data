@@ -28,5 +28,5 @@ autoinstall:
       sed -i 's/^#*PermitRootLogin .*/PermitRootLogin no/' /target/etc/ssh/sshd_config
     - "echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/ubuntu"
     - "chmod 440 /target/etc/sudoers.d/ubuntu"
-    - "chroot /target systemctl enable --now ssh" || true
-    - "echo 'ubuntu:$6$VKeUXi/iUw7gj5/C$Ok5ZA.fjMcZFG/GAkDz9LWUWvCi9Gdo4KlKINAkC//zhB3yOOPrk4Ws8iFjozEa7WE2QBpuTtPy6ugsWnTUh01' | chpasswd -e -R /target" || true
+    - "chroot /target systemctl enable --now ssh || true"
+    - "echo 'ubuntu:$6$VKeUXi/iUw7gj5/C$Ok5ZA.fjMcZFG/GAkDz9LWUWvCi9Gdo4KlKINAkC//zhB3yOOPrk4Ws8iFjozEa7WE2QBpuTtPy6ugsWnTUh01' | chpasswd -e -R /target || true"
