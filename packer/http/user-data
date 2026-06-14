@@ -43,3 +43,6 @@ autoinstall:
     - "chroot /target ufw --force disable || true"
     - "chroot /target systemctl restart ssh || true"
     - "chmod 1777 /target/tmp || true"
+    # Helpful markers visible on the console/login screen so you know where autoinstall ended
+    - "echo '=== LATE-COMMANDS COMPLETE (autoinstall done) ===' | tee /target/etc/motd.d/late-commands-done /dev/ttyS0 /dev/tty0 2>/dev/null || true"
+    - "echo 'cloud-init is now finished. Packer will take over via SSH for the rest of the build.' | tee -a /target/etc/motd.d/late-commands-done /dev/ttyS0 /dev/tty0 2>/dev/null || true"
