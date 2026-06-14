@@ -136,69 +136,36 @@ source "hyperv-iso" "openclaw" {
     EOT
   }
 
-  # Boot the live server ISO and edit the kernel command line (GRUB edit) to pass the
-  # autoinstall directive pointing at Packer's HTTP server.
+  # Boot the live server ISO by entering the GRUB command console ('c' at the menu) and
+  # typing explicit linux / initrd / boot commands that include the autoinstall directive.
+  # This points the installer at Packer's temp HTTP server (http_content above) for the
+  # nocloud user-data + meta-data that drive the unattended install.
   #
-  # The {{ .HTTPIP }} and {{ .HTTPPort }} are substituted by Packer at runtime.
+  # We deliberately use the 'c' grub> prompt method instead of 'e' + <down>/<end> editing of
+  # the menuentry. The hyperv-iso builder maps arrow/<end> keys to numpad scan codes; when
+  # numlock is on in the Ubuntu live env (common) they type literal digits "2" and "1".
+  # <numlock> is not a supported special key in the hyperv builder's boot_command parser so
+  # it appeared as literal text. Navigation also frequently landed on the setparams line
+  # instead of the linux line, causing the appended text to be in the wrong place.
   #
-  # This sequence is notoriously fragile across Ubuntu point releases because it relies on
-  # sending keystrokes to the GRUB menu editor.
+  # The 'c' approach needs only regular typing + <enter> (no arrows, no <end>, no numlock
+  # toggle, no massive <bs> cleanup, no setparams confusion). Much more reliable on Hyper-V.
   #
-  # Key observations from your runs:
-  # - "2221" (or similar numbers) appearing then being deleted by the <bs> sequence = good,
-  #   the backspaces are now cleaning up garbage from previous bad edits or menu artifacts.
-  # - "can't find command autoinstall" = the text was successfully typed, but it landed on
-  #   the WRONG line in the GRUB editor (e.g. on the menuentry line, a comment, or initrd line
-  #   instead of the `linux /casper/vmlinuz ...` parameters line). GRUB then treats
-  #   "autoinstall ..." as an unknown command.
+  # {{ .HTTPIP }} and {{ .HTTPPort }} are substituted by Packer at runtime.
   #
-  # The number of <down> needed is the main variable. For 24.04.4 live-server it is often
-  # 2, 3, or 4 downs to reach the linux kernel line after pressing 'e'.
-  #
-  # Current attempt below uses 4 downs + extra waits + aggressive backspaces.
-  # If it still fails, change the "<down><wait>" count (try 2 or 3) and re-run.
-  #
-  # Pro tip for debugging without full rebuilds:
-  #   Watch the Packer log for:
-  #     "Starting HTTP server on port XXXX"
-  #     "Host IP for the HyperV machine: 172.25.224.1"
-  #   Then when the VM is at the language/GRUB screen, manually connect in Hyper-V Manager,
-  #   press 'e' on the menu, navigate manually, and test appending:
-  #     " autoinstall ds=nocloud;s=http://172.25.224.1:8889/ ---"
-  #   (use the actual IP:port from that run). This lets you discover the exact <down> count
-  #   that works for this ISO without waiting for Packer to re-type everything.
-  #
-  # If this continues to be painful, the cleanest fix is to switch the whole template to
-  # use an official pre-installed cloud .vhd from cloud-images.ubuntu.com instead of the
-  # live ISO + GRUB hack. That path has no boot_command editing at all.
+  # Short waits throughout: the previous 15s boot_wait + <wait15s> made it appear to hang
+  # with no visible typing for a long time.
   boot_command = [
-    "<wait15s>",                 # give the GRUB menu plenty of time to appear and stabilize
-    "e<wait3s>",                 # edit the selected menu entry
-    "<numlock><wait>",           # force numlock OFF so that <down>/<end> (numpad-based in hyperv) move the cursor instead of typing digits
-    #
-    # Your observation is exactly right:
-    # Packer's <down> and <end> sequences (via the hyperv-iso builder) are delivered as the
-    # numeric keypad equivalents. When numlock is on in the live ISO environment, they literally
-    # type the characters "2" (for down) and "1" (for end) instead of moving the cursor.
-    # That's why you see "2221" (down down down end) being inserted as text at the beginning
-    # of whatever line the cursor is on, instead of navigating to the linux kernel line.
-    #
-    # We now explicitly toggle numlock off right after 'e'.
-    # Then the navigation should actually move the cursor.
-    #
-    # Start with 2 downs (very common for 24.04 live-server GRUB edit).
-    # If it still inserts in the wrong spot, try the 3-down or 4-down variants below
-    # by editing this file locally and re-running (no need to wait for me).
-    #
-    "<down><wait><down><wait><end><wait>",   # 2 downs + end  (try this first)
-    # "<down><wait><down><wait><down><wait><end><wait>",   # 3 downs + end
-    # "<down><wait><down><wait><down><wait><down><wait><end><wait>",  # 4 downs + end
-    #
-    "<bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs>",
-    " autoinstall ds=nocloud\\;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ---<wait>",
-    "<f10><wait>"
+    "<wait5s>",
+    "c<wait2s>",
+    "linux /casper/vmlinuz autoinstall ds=nocloud\\;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ---<wait>",
+    "<enter><wait>",
+    "initrd /casper/initrd<wait>",
+    "<enter><wait>",
+    "boot<wait>",
+    "<enter>"
   ]
-  boot_wait = "15s"   # longer initial wait before we start sending keys
+  boot_wait = "5s"
 
   # Communicator for all the shell provisioners below (after autoinstall finishes and SSH is up).
   communicator     = "ssh"
