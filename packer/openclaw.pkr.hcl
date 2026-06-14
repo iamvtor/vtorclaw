@@ -147,8 +147,9 @@ source "hyperv-iso" "openclaw" {
   # Critical for autoinstall to actually engage (instead of dropping to interactive language chooser):
   # - Put autoinstall/ds params AFTER the "---" separator.
   # - Use the nocloud-net;seedfrom= form (more reliable for early network fetch in live env).
-  # - Quote the ds= value (single quotes here) so GRUB doesn't treat ; as a command separator.
-  # - Optionally set gfxpayload and net.ifnames for the live environment.
+  # - Quote the ds= value with **double quotes** in the GRUB command (ds=\"...\") so the ; is not
+  #   interpreted by GRUB as a command separator. Single quotes didn't work in testing.
+  # - set gfxpayload=keep to match the stock menuentry.
   #
   # Watch the Packer output for these two lines (they appear after "Starting build ..."):
   #   Starting HTTP server on port XXXX
@@ -161,7 +162,7 @@ source "hyperv-iso" "openclaw" {
   #
   # If it still falls through to language selection on next run:
   #   In Hyper-V console (when at language screen): Ctrl+Alt+F2 (or F3) for a shell.
-  #   Then: cat /proc/cmdline
+  #   Then: cat /proc/cmdline   <--- MOST IMPORTANT: this shows exactly what kernel params were received
   #   And try: curl -v http://<ip>:<port>/user-data   (to see if the guest can reach Packer's HTTP server).
   #
   # {{ .HTTPIP }} and {{ .HTTPPort }} are substituted by Packer at runtime.
@@ -169,8 +170,8 @@ source "hyperv-iso" "openclaw" {
     "<wait5s>",
     "c<wait2s>",
     "set gfxpayload=keep<enter><wait>",
-    "linux /casper/vmlinuz --- autoinstall net.ifnames=0 biosdevname=0 'ds=nocloud-net;seedfrom=http://{{ .HTTPIP }}:{{ .HTTPPort }}/'<wait>",
-    "<enter><wait>",
+    "linux /casper/vmlinuz --- autoinstall ds=\"nocloud-net;seedfrom=http://{{ .HTTPIP }}:{{ .HTTPPort }}/\"<wait>",
+    "<enter><wait2s>",
     "initrd /casper/initrd<wait>",
     "<enter><wait>",
     "boot<wait>",
