@@ -145,7 +145,7 @@ source "hyperv-iso" "openclaw" {
     "<wait10s>",
     "c<wait3s>",
     "set gfxpayload=keep<enter><wait>",
-    "linux /casper/vmlinuz --- autoinstall 'ds=nocloud;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/'<wait>",
+    "linux /casper/vmlinuz --- autoinstall ip=dhcp net.ifnames=0 biosdevname=0 ds=\"nocloud-net;seedfrom=http://{{ .HTTPIP }}:{{ .HTTPPort }}/\"<wait>",
     "<enter><wait5s>",
     "initrd /casper/initrd<enter><wait>",
     "boot<enter>"
