@@ -7,6 +7,11 @@ autoinstall:
   storage:
     layout:
       name: direct
+  packages:
+    # These provide the Hyper-V guest daemons (KVP etc.) so the host can reliably
+    # query the guest IP for Packer's SSH communicator over the virtual switch.
+    - linux-tools-virtual
+    - linux-cloud-tools-virtual
   network:
     version: 2
     ethernets:
