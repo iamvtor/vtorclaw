@@ -117,8 +117,11 @@ source "hyperv-iso" "openclaw" {
         network:
           version: 2
           ethernets:
-            eth0:
+            any:
+              match:
+                name: "*"
               dhcp4: true
+              optional: true
         identity:
           hostname: openclaw-golden
           username: ubuntu
@@ -136,29 +139,38 @@ source "hyperv-iso" "openclaw" {
     EOT
   }
 
-  # Boot the live server ISO by entering the GRUB command console ('c' at the menu) and
-  # typing explicit linux / initrd / boot commands that include the autoinstall directive.
-  # This points the installer at Packer's temp HTTP server (http_content above) for the
-  # nocloud user-data + meta-data that drive the unattended install.
+  # Boot via the GRUB console ('c') and issue explicit linux/initrd/boot with autoinstall
+  # datasource pointing at Packer's http_content (serves user-data + meta-data over HTTP).
   #
-  # We deliberately use the 'c' grub> prompt method instead of 'e' + <down>/<end> editing of
-  # the menuentry. The hyperv-iso builder maps arrow/<end> keys to numpad scan codes; when
-  # numlock is on in the Ubuntu live env (common) they type literal digits "2" and "1".
-  # <numlock> is not a supported special key in the hyperv builder's boot_command parser so
-  # it appeared as literal text. Navigation also frequently landed on the setparams line
-  # instead of the linux line, causing the appended text to be in the wrong place.
+  # We use the 'c' method because 'e' + cursor keys are unreliable on the hyperv-iso builder
+  # (numpad scan codes + numlock produce digits instead of movement; <numlock> isn't a special key).
   #
-  # The 'c' approach needs only regular typing + <enter> (no arrows, no <end>, no numlock
-  # toggle, no massive <bs> cleanup, no setparams confusion). Much more reliable on Hyper-V.
+  # Critical for autoinstall to actually engage (instead of dropping to interactive language chooser):
+  # - Put autoinstall/ds params AFTER the "---" separator.
+  # - Use the nocloud-net;seedfrom= form (more reliable for early network fetch in live env).
+  # - Quote the ds= value (single quotes here) so GRUB doesn't treat ; as a command separator.
+  # - Optionally set gfxpayload and net.ifnames for the live environment.
+  #
+  # Watch the Packer output for these two lines (they appear after "Starting build ..."):
+  #   Starting HTTP server on port XXXX
+  #   Host IP for the HyperV machine: 172.18.64.1   (or similar; this is what the guest reaches)
+  #
+  # You can test from the Windows host browser while at the GRUB prompt:
+  #   http://<that-ip>:<port>/user-data
+  #   http://<that-ip>:<port>/meta-data
+  # Both must return the content.
+  #
+  # If it still falls through to language selection on next run:
+  #   In Hyper-V console (when at language screen): Ctrl+Alt+F2 (or F3) for a shell.
+  #   Then: cat /proc/cmdline
+  #   And try: curl -v http://<ip>:<port>/user-data   (to see if the guest can reach Packer's HTTP server).
   #
   # {{ .HTTPIP }} and {{ .HTTPPort }} are substituted by Packer at runtime.
-  #
-  # Short waits throughout: the previous 15s boot_wait + <wait15s> made it appear to hang
-  # with no visible typing for a long time.
   boot_command = [
     "<wait5s>",
     "c<wait2s>",
-    "linux /casper/vmlinuz autoinstall ds=nocloud\\;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ---<wait>",
+    "set gfxpayload=keep<enter><wait>",
+    "linux /casper/vmlinuz --- autoinstall net.ifnames=0 biosdevname=0 'ds=nocloud-net;seedfrom=http://{{ .HTTPIP }}:{{ .HTTPPort }}/'<wait>",
     "<enter><wait>",
     "initrd /casper/initrd<wait>",
     "<enter><wait>",
