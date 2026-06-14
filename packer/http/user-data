@@ -18,7 +18,7 @@ autoinstall:
   identity:
     hostname: openclaw-golden
     username: ubuntu
-    password: "PackerBuildOnly-ChangeMe-9f3k2"
+    password: "$6$VKeUXi/iUw7gj5/C$Ok5ZA.fjMcZFG/GAkDz9LWUWvCi9Gdo4KlKINAkC//zhB3yOOPrk4Ws8iFjozEa7WE2QBpuTtPy6ugsWnTUh01"
   ssh:
     install-server: true
     allow-pw: true
@@ -29,3 +29,4 @@ autoinstall:
     - "echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/ubuntu"
     - "chmod 440 /target/etc/sudoers.d/ubuntu"
     - "chroot /target systemctl enable --now ssh" || true
+    - "echo 'ubuntu:$6$VKeUXi/iUw7gj5/C$Ok5ZA.fjMcZFG/GAkDz9LWUWvCi9Gdo4KlKINAkC//zhB3yOOPrk4Ws8iFjozEa7WE2QBpuTtPy6ugsWnTUh01' | chpasswd -e -R /target" || true
