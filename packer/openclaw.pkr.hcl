@@ -140,16 +140,27 @@ source "hyperv-iso" "openclaw" {
   # autoinstall directive pointing at Packer's HTTP server.
   #
   # The {{ .HTTPIP }} and {{ .HTTPPort }} are substituted by Packer at runtime.
-  # This is the standard pattern for fully unattended Ubuntu server installs in Packer
-  # on all platforms (especially Windows).
+  #
+  # This sequence is notoriously fragile across Ubuntu point releases because it relies on
+  # sending keystrokes to the GRUB menu editor. We use:
+  #   - generous waits
+  #   - precise <down> + <end> to land on the linux kernel line
+  #   - backspaces to clear default "quiet splash" etc. at end of line
+  #   - proper escaping (\\;) for the nocloud datasource separator so GRUB/cmdline
+  #     doesn't misinterpret the parameters
+  #
+  # If this still flakes, the most reliable alternative for Hyper-V is to stop using
+  # the live ISO + GRUB hack entirely and base the golden on a pre-downloaded cloud
+  # .vhd from cloud-images.ubuntu.com (we can switch to that later).
   boot_command = [
-    "<wait5s>",
-    "e<wait>",
-    "<down><down><down><end>",
-    " autoinstall ds=nocloud;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ---",
-    "<f10>"
+    "<wait10s>",                 # give the GRUB menu plenty of time to appear
+    "e<wait2s>",                 # edit the selected menu entry
+    "<down><wait><down><wait><down><wait><end><wait>",   # move to the linux line and go to end
+    "<bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs><bs>",
+    " autoinstall ds=nocloud\\;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ---<wait>",
+    "<f10><wait>"
   ]
-  boot_wait = "5s"
+  boot_wait = "10s"   # longer initial wait before we start sending keys
 
   # Communicator for all the shell provisioners below (after autoinstall finishes and SSH is up).
   communicator     = "ssh"
