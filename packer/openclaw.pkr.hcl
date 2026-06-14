@@ -73,8 +73,7 @@ variable "iso_url" {
 variable "iso_checksum" {
   type    = string
   # Get the current one from https://releases.ubuntu.com/noble/SHA256SUMS
-  # Example (replace with the real value for the ISO you actually download):
-  default = "sha256:7b8e50f485b1d33e16bc1c2ab7495943c7f0b1c6f3e0e5e5f0e5e5f0e5e5f0e5" # PLACEHOLDER - update before first build
+  default = "sha256:e907d92eeec9df64163a7e454cbc8d7755e8ddc7ed42f99dbc80c40f1a138433"
 }
 
 variable "build_vm_name" {
