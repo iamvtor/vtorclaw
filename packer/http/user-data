@@ -22,7 +22,9 @@ autoinstall:
   identity:
     hostname: openclaw-golden
     username: ubuntu
-    password: "$6$VKeUXi/iUw7gj5/C$Ok5ZA.fjMcZFG/GAkDz9LWUWvCi9Gdo4KlKINAkC//zhB3yOOPrk4Ws8iFjozEa7WE2QBpuTtPy6ugsWnTUh01"
+    # Password is set in late-commands (with chpasswd -e + chage + shadow sed) to avoid
+    # the "must change password on first login" prompt that interferes with Packer's
+    # non-interactive sftp uploads for the provisioner scripts.
   ssh:
     install-server: true
     allow-pw: true
@@ -33,6 +35,7 @@ autoinstall:
     - "test -f /target/etc/ssh/sshd_config && sed -i 's/^#*PermitRootLogin .*/PermitRootLogin no/' /target/etc/ssh/sshd_config || true"
     - "test -f /target/etc/ssh/sshd_config && sed -i 's/^#*Subsystem sftp.*/Subsystem sftp /usr/lib/openssh/sftp-server/' /target/etc/ssh/sshd_config || true"
     - "chmod +x /target/usr/lib/openssh/sftp-server || true"
+    - "chroot /target mkdir -p /home/ubuntu && chroot /target chown ubuntu:ubuntu /home/ubuntu && chroot /target chmod 755 /home/ubuntu || true"
     - "echo 'AllowUsers ubuntu' >> /target/etc/ssh/sshd_config"
     - "echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/ubuntu"
     - "chmod 440 /target/etc/sudoers.d/ubuntu"
