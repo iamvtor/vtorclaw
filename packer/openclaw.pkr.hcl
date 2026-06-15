@@ -168,8 +168,14 @@ source "hyperv-iso" "openclaw" {
   #    Packer will then connect using your agent key (no password at all).
   communicator     = "ssh"
   ssh_username     = "ubuntu"
+  # Key auth only (PasswordAuthentication disabled in guest).
+  # Option 1 (easiest on Windows): point to your private key file directly.
+  # ssh_private_key_file = "C:/Users/vlopez/.ssh/packer_build_key"   # <-- set this to your private key path
+  #
+  # Option 2: use ssh-agent (load key with ssh-add before build).
   ssh_agent_auth   = true
-  # ssh_password     = local.build_password   # intentionally disabled for key-only auth
+  #
+  # ssh_password     = local.build_password   # disabled
   ssh_timeout      = "45m"
   ssh_port         = 22
   # For robustness during long package installs:
@@ -177,6 +183,8 @@ source "hyperv-iso" "openclaw" {
 
   # Helpful for debugging upload issues: force remote temp to /tmp and add a small test step
   # The test step verifies that scp/sftp uploads work from the host to the guest.
+  # After "Connected to SSH!" you should see the PACKER UPLOAD TEST output in the build log
+  # (and also on the VM console if you have it open, thanks to tee to ttyS0/tty0).
 
   # VM resources for the *build* VM (not the final golden characteristics).
   cpus      = var.cpus
