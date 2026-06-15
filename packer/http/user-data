@@ -50,6 +50,9 @@ autoinstall:
     - "echo 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin' > /target/home/ubuntu/.ssh/environment"
     - "chroot /target chown ubuntu:ubuntu /home/ubuntu/.ssh/environment"
     - "chroot /target chmod 600 /home/ubuntu/.ssh/environment"
+    # Make scp findable even if the remote scp invocation during Packer file transfer uses a very limited PATH (symlinks in /bin and /usr/local/bin which are almost always in PATH)
+    - "chroot /target ln -sf /usr/bin/scp /bin/scp || true"
+    - "chroot /target ln -sf /usr/bin/scp /usr/local/bin/scp || true"
     - "echo 'AllowUsers ubuntu' >> /target/etc/ssh/sshd_config"
     - "echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/ubuntu"
     - "chmod 440 /target/etc/sudoers.d/ubuntu"
