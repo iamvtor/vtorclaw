@@ -27,9 +27,11 @@ autoinstall:
     install-server: true
     allow-pw: true
   late-commands:
-    - "sed -i 's/^#*PasswordAuthentication .*/PasswordAuthentication yes/' /target/etc/ssh/sshd_config"
-    - "sed -i 's/^#*PermitRootLogin .*/PermitRootLogin no/' /target/etc/ssh/sshd_config"
-    - "sed -i 's/^#*Subsystem sftp.*/Subsystem sftp /usr/lib/openssh/sftp-server/' /target/etc/ssh/sshd_config"
+    # Ensure openssh-server (and thus sshd_config) is definitely installed before we edit its config
+    - "chroot /target apt-get install -y --no-install-recommends openssh-server || true"
+    - "test -f /target/etc/ssh/sshd_config && sed -i 's/^#*PasswordAuthentication .*/PasswordAuthentication yes/' /target/etc/ssh/sshd_config || true"
+    - "test -f /target/etc/ssh/sshd_config && sed -i 's/^#*PermitRootLogin .*/PermitRootLogin no/' /target/etc/ssh/sshd_config || true"
+    - "test -f /target/etc/ssh/sshd_config && sed -i 's/^#*Subsystem sftp.*/Subsystem sftp /usr/lib/openssh/sftp-server/' /target/etc/ssh/sshd_config || true"
     - "chmod +x /target/usr/lib/openssh/sftp-server || true"
     - "echo 'AllowUsers ubuntu' >> /target/etc/ssh/sshd_config"
     - "echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/ubuntu"
