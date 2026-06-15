@@ -153,9 +153,23 @@ source "hyperv-iso" "openclaw" {
   boot_wait = "5s"
 
   # Communicator for all the shell provisioners below (after autoinstall finishes and SSH is up).
+  # Using SSH key auth (ssh_agent_auth = true) + PasswordAuthentication no in the guest.
+  # This completely avoids the "forced to change password on first login" problem that
+  # was breaking Packer's non-interactive script uploads (sftp/scp).
+  #
+  # How to use:
+  # 1. Generate a key on your build machine if you don't have one:
+  #      ssh-keygen -t ed25519 -C "packer-build"
+  # 2. Copy the PUBLIC key content (the line starting with ssh-ed25519 ...) and replace the
+  #    placeholder in packer/http/user-data (the "echo 'ssh-ed25519 AAAAC3..." line in late-commands).
+  # 3. Load the corresponding PRIVATE key into your SSH agent before running packer build:
+  #    - On Windows: use OpenSSH agent (ssh-add) or PuTTY Pageant.
+  # 4. The build will inject the pubkey and set PasswordAuthentication no.
+  #    Packer will then connect using your agent key (no password at all).
   communicator     = "ssh"
   ssh_username     = "ubuntu"
-  ssh_password     = local.build_password
+  ssh_agent_auth   = true
+  # ssh_password     = local.build_password   # intentionally disabled for key-only auth
   ssh_timeout      = "45m"
   ssh_port         = 22
   # For robustness during long package installs:

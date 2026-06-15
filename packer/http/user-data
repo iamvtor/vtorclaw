@@ -29,11 +29,20 @@ autoinstall:
   late-commands:
     # Ensure openssh-server (and thus sshd_config) is definitely installed before we edit its config
     - "chroot /target apt-get install -y --no-install-recommends openssh-server || true"
-    - "test -f /target/etc/ssh/sshd_config && sed -i 's/^#*PasswordAuthentication .*/PasswordAuthentication yes/' /target/etc/ssh/sshd_config || true"
+    - "test -f /target/etc/ssh/sshd_config && sed -i 's/^#*PasswordAuthentication .*/PasswordAuthentication no/' /target/etc/ssh/sshd_config || true"
     - "test -f /target/etc/ssh/sshd_config && sed -i 's/^#*PermitRootLogin .*/PermitRootLogin no/' /target/etc/ssh/sshd_config || true"
     - "test -f /target/etc/ssh/sshd_config && sed -i 's/^#*Subsystem sftp.*/Subsystem sftp /usr/lib/openssh/sftp-server/' /target/etc/ssh/sshd_config || true"
     - "chmod +x /target/usr/lib/openssh/sftp-server || true"
     - "chroot /target mkdir -p /home/ubuntu && chroot /target chown ubuntu:ubuntu /home/ubuntu && chroot /target chmod 755 /home/ubuntu || true"
+    # Install the build host's SSH public key for key-based auth.
+    # IMPORTANT: Replace the placeholder below with your actual public key (e.g. from ssh-keygen -t ed25519)
+    # before building. Then load the corresponding private key into your SSH agent (ssh-agent on Windows
+    # or PuTTY Pageant) so that ssh_agent_auth works for Packer.
+    - "chroot /target mkdir -p /home/ubuntu/.ssh"
+    - "echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI_REPLACE_WITH_YOUR_BUILD_HOST_PUBLIC_KEY_HERE packer-build-key' > /target/home/ubuntu/.ssh/authorized_keys"
+    - "chroot /target chown -R ubuntu:ubuntu /home/ubuntu/.ssh"
+    - "chroot /target chmod 700 /home/ubuntu/.ssh"
+    - "chroot /target chmod 600 /home/ubuntu/.ssh/authorized_keys"
     - "echo 'AllowUsers ubuntu' >> /target/etc/ssh/sshd_config"
     - "echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/ubuntu"
     - "chmod 440 /target/etc/sudoers.d/ubuntu"
