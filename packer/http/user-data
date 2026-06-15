@@ -13,6 +13,7 @@ autoinstall:
   packages:
     - linux-tools-virtual
     - linux-cloud-tools-virtual
+    - openssh-client
   network:
     version: 2
     ethernets:
@@ -31,8 +32,7 @@ autoinstall:
     - "chroot /target apt-get install -y --no-install-recommends openssh-server || true"
     - "test -f /target/etc/ssh/sshd_config && sed -i 's/^#*PasswordAuthentication .*/PasswordAuthentication no/' /target/etc/ssh/sshd_config || true"
     - "test -f /target/etc/ssh/sshd_config && sed -i 's/^#*PermitRootLogin .*/PermitRootLogin no/' /target/etc/ssh/sshd_config || true"
-    - "test -f /target/etc/ssh/sshd_config && sed -i 's/^#*Subsystem sftp.*/Subsystem sftp /usr/lib/openssh/sftp-server/' /target/etc/ssh/sshd_config || true"
-    - "chmod +x /target/usr/lib/openssh/sftp-server || true"
+    # No Subsystem sftp so Packer falls back to scp for uploads (scp binary provided by openssh-client package)
     - "chroot /target mkdir -p /home/ubuntu && chroot /target chown ubuntu:ubuntu /home/ubuntu && chroot /target chmod 755 /home/ubuntu || true"
     # Install the build host's SSH public key for key-based auth (PasswordAuthentication is disabled).
     # >>> REPLACE THE LINE BELOW WITH YOUR REAL PUBLIC KEY BEFORE BUILDING <<<
