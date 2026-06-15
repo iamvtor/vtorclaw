@@ -22,9 +22,7 @@ autoinstall:
   identity:
     hostname: openclaw-golden
     username: ubuntu
-    # Password is set in late-commands (with chpasswd -e + chage + shadow sed) to avoid
-    # the "must change password on first login" prompt that interferes with Packer's
-    # non-interactive sftp uploads for the provisioner scripts.
+    password: "$6$VKeUXi/iUw7gj5/C$Ok5ZA.fjMcZFG/GAkDz9LWUWvCi9Gdo4KlKINAkC//zhB3yOOPrk4Ws8iFjozEa7WE2QBpuTtPy6ugsWnTUh01"
   ssh:
     install-server: true
     allow-pw: true
