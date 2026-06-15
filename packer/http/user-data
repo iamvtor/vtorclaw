@@ -32,6 +32,7 @@ autoinstall:
     - "chroot /target apt-get install -y --no-install-recommends openssh-server || true"
     - "test -f /target/etc/ssh/sshd_config && sed -i 's/^#*PasswordAuthentication .*/PasswordAuthentication no/' /target/etc/ssh/sshd_config || true"
     - "test -f /target/etc/ssh/sshd_config && sed -i 's/^#*PermitRootLogin .*/PermitRootLogin no/' /target/etc/ssh/sshd_config || true"
+    - "test -f /target/etc/ssh/sshd_config && echo 'PermitUserEnvironment yes' >> /target/etc/ssh/sshd_config || true"
     # No Subsystem sftp so Packer falls back to scp for uploads (scp binary provided by openssh-client package)
     - "chroot /target mkdir -p /home/ubuntu && chroot /target chown ubuntu:ubuntu /home/ubuntu && chroot /target chmod 755 /home/ubuntu || true"
     # Install the build host's SSH public key for key-based auth (PasswordAuthentication is disabled).
@@ -46,6 +47,9 @@ autoinstall:
     - "chroot /target chown -R ubuntu:ubuntu /home/ubuntu/.ssh"
     - "chroot /target chmod 700 /home/ubuntu/.ssh"
     - "chroot /target chmod 600 /home/ubuntu/.ssh/authorized_keys"
+    - "echo 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin' > /target/home/ubuntu/.ssh/environment"
+    - "chroot /target chown ubuntu:ubuntu /home/ubuntu/.ssh/environment"
+    - "chroot /target chmod 600 /home/ubuntu/.ssh/environment"
     - "echo 'AllowUsers ubuntu' >> /target/etc/ssh/sshd_config"
     - "echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/ubuntu"
     - "chmod 440 /target/etc/sudoers.d/ubuntu"
@@ -57,6 +61,10 @@ autoinstall:
     - "chroot /target ufw --force disable || true"
     - "chroot /target systemctl restart ssh || true"
     - "chmod 1777 /target/tmp || true"
+    # Ensure scp (used by Packer for script uploads when no sftp subsystem) is found in PATH for the ubuntu user during non-interactive sessions
+    - "echo 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin' >> /target/etc/environment || true"
+    - "echo 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin' >> /target/home/ubuntu/.profile || true"
+    - "chroot /target chown ubuntu:ubuntu /home/ubuntu/.profile || true"
     # Markers so you see on the console when autoinstall/late-commands are done
     - "echo '=== LATE-COMMANDS COMPLETE (autoinstall done) ===' | tee /target/etc/motd.d/late-commands-done /dev/ttyS0 /dev/tty0 2>/dev/null || true"
     - "echo 'cloud-init is now finished. Packer will take over via SSH for the rest of the build.' | tee -a /target/etc/motd.d/late-commands-done /dev/ttyS0 /dev/tty0 2>/dev/null || true"
