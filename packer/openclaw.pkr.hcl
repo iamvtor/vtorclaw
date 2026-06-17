@@ -145,7 +145,7 @@ source "hyperv-iso" "openclaw" {
     "<wait10s>",
     "c<wait3s>",
     "set gfxpayload=keep<enter><wait>",
-    "linux /casper/vmlinuz --- autoinstall ip=dhcp net.ifnames=0 biosdevname=0 ds=\"nocloud-net;seedfrom=http://{{ .HTTPIP }}:{{ .HTTPPort }}/\"<wait>",  # this exact form (nocloud-net;seedfrom + double quotes + net params) got us to "Connected to SSH!" multiple times previously
+    "linux /casper/vmlinuz --- autoinstall ip=dhcp net.ifnames=0 biosdevname=0 ds=\"nocloud-net;seedfrom=http://{{ .HTTPIP }}:{{ .HTTPPort }}/\" console=ttyS0,115200n8 <wait>",
     "<enter><wait5s>",
     "initrd /casper/initrd<enter><wait>",
     "boot<enter>"
@@ -185,6 +185,14 @@ source "hyperv-iso" "openclaw" {
   # The test step verifies that scp/sftp uploads work from the host to the guest.
   # After "Connected to SSH!" you should see the PACKER UPLOAD TEST output in the build log
   # (and also on the VM console if you have it open, thanks to tee to ttyS0/tty0).
+  #
+  # IMPORTANT: To avoid watching the Hyper-V GUI at all, run the companion script
+  # in a *separate* PowerShell window FIRST:
+  #   .\monitor-build.ps1
+  # It captures the serial console (via named pipe) + runs periodic SSH diagnostics
+  # from the *host* and writes everything to packer-serial.log and packer-guest-diag.log
+  # on the host. Just watch that window or the log files.
+  # (The provisioner above also configures the COM1 pipe automatically.)
 
   # VM resources for the *build* VM (not the final golden characteristics).
   cpus      = var.cpus
@@ -208,6 +216,22 @@ source "hyperv-iso" "openclaw" {
 
 build {
   sources = ["source.hyperv-iso.openclaw"]
+
+  # Configure the VM's COM1 to a named pipe on the host so we can capture serial
+  # console output (including the auto-diagnostics) from the host without watching
+  # the Hyper-V GUI. The monitor script below will tail the pipe.
+  provisioner "shell-local" {
+    inline = [
+      "powershell -Command \"",
+      "  \$vmName = 'openclaw-packer-build';",
+      "  Write-Host 'Waiting for VM to exist...';",
+      "  while (-not (Get-VM -Name \$vmName -ErrorAction SilentlyContinue)) { Start-Sleep -Milliseconds 500 };",
+      "  Write-Host 'Attaching serial console pipe...';",
+      "  Set-VMComPort -VMName \$vmName -Number 1 -Path '\\\\.\\pipe\\openclaw-serial';",
+      "  Write-Host 'Serial pipe ready: \\\\.\\pipe\\openclaw-serial (use the monitor script to capture)';",
+      "\""
+    ]
+  }
 
   # 0. Tiny test provisioner to verify that script upload (scp) works from the host.
   #    Uploads to /home/ubuntu (writable by the user) to avoid /tmp tmpfs/perms issues.
