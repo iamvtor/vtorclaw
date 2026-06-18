@@ -294,6 +294,7 @@ build {
       "set -e",
       "echo '=== OPENCLAW PACKER BAKE START ==='",
       "sudo chown -R openclaw:openclaw /home/openclaw || true",
+      "sudo chmod 755 /home/openclaw || true",
 
       # PATH reinforcement for the dedicated user (same as launcher).
       "sudo -u openclaw bash -c 'mkdir -p ~/.openclaw/bin' || true",
@@ -332,16 +333,28 @@ build {
       "echo \"  stable wrapper at $CANDIDATE\"",
       "LINKSCRIPT",
       "chmod +x /tmp/openclaw-link.sh",
+      "chown openclaw:openclaw /tmp/openclaw-link.sh || true",
       "sudo -u openclaw bash -l /tmp/openclaw-link.sh || echo 'User link script non-zero (non-fatal)'",
+      "sudo -u openclaw bash -c 'chmod +x /home/openclaw/.openclaw/bin/openclaw || true' || true",
 
       # Root-owned link in /usr/local/bin.
       "sudo ln -sf /home/openclaw/.openclaw/bin/openclaw /usr/local/bin/openclaw || true",
       "sudo chmod +x /usr/local/bin/openclaw || true",
       "ls -l /usr/local/bin/openclaw || true",
 
-      # Quick verification markers.
-      "if [ -x /home/openclaw/.openclaw/bin/openclaw ]; then echo 'VERIFIED: /home/openclaw/.openclaw/bin/openclaw'; else echo 'MISSING: user bin'; fi",
-      "if [ -x /usr/local/bin/openclaw ]; then echo 'VERIFIED: /usr/local/bin/openclaw'; else echo 'MISSING: /usr/local/bin'; fi",
+      # Robust verification (matching launch.ps1).
+      "echo '=== VERIFICATION ==='",
+      "if [ -x /home/openclaw/.openclaw/bin/openclaw ]; then",
+      "  echo 'VERIFIED: /home/openclaw/.openclaw/bin/openclaw is executable'",
+      "  /home/openclaw/.openclaw/bin/openclaw --version 2>/dev/null || echo '(version probe non-zero is acceptable pre-onboard)'",
+      "else",
+      "  echo 'VERIFICATION FAILED: /home/openclaw/.openclaw/bin/openclaw missing or not executable'",
+      "fi",
+      "if [ -x /usr/local/bin/openclaw ]; then",
+      "  echo 'VERIFIED: /usr/local/bin/openclaw is executable (bare name will work under sudo -u openclaw)'",
+      "else",
+      "  echo 'VERIFICATION FAILED: /usr/local/bin/openclaw missing or not executable'",
+      "fi",
       "echo '=== OPENCLAW PACKER BAKE END ==='"
     ]
   }
@@ -386,14 +399,15 @@ build {
   provisioner "shell" {
     inline = [
       "set -e",
-      "sudo -u openclaw bash -c '",
-      "  mkdir -p ~/.openclaw",
-      "  cat > ~/.openclaw/openclaw.json << \"JSON\"",
+      "cat > /tmp/base-openclaw.json << 'JSONEOF'",
       "  {",
       "    \"gateway\": { \"mode\": \"local\", \"bind\": \"loopback\", \"auth\": { \"mode\": \"token\", \"token\": \"PACKER_PLACEHOLDER\" } },",
       "    \"agents\": { \"defaults\": { \"sandbox\": { \"mode\": \"non-main\", \"backend\": \"docker\", \"browser\": { \"autoStart\": true } } } }",
       "  }",
-      "  JSON",
+      "JSONEOF",
+      "sudo -u openclaw bash -c '",
+      "  mkdir -p ~/.openclaw",
+      "  cp /tmp/base-openclaw.json ~/.openclaw/openclaw.json",
       "  chmod 600 ~/.openclaw/openclaw.json",
       "' || true"
     ]
