@@ -293,15 +293,11 @@ build {
       "sudo chown -R openclaw:openclaw /home/openclaw || true",
 
       # PATH reinforcement for the dedicated user (same as launcher).
-      "sudo -u openclaw bash -c '",
-      "  mkdir -p ~/.openclaw/bin",
-      "  for f in ~/.bashrc ~/.profile; do",
-      "    if [ -f \"$f\" ] || [ ! -e \"$f\" ]; then",
-      "      grep -q \"export PATH=/usr/local/bin:$PATH\" \"$f\" 2>/dev/null || echo 'export PATH=\"/usr/local/bin:$PATH\"' >> \"$f\"",
-      "      grep -q \"pnpm/bin\" \"$f\" 2>/dev/null || echo 'export PATH=\"$HOME/.local/share/pnpm/bin:$PATH\"' >> \"$f\"",
-      "    fi",
-      "  done",
-      "' || true",
+      "sudo -u openclaw bash -c 'mkdir -p ~/.openclaw/bin' || true",
+      "sudo -u openclaw bash -c 'echo \"export PATH=\\\"/usr/local/bin:\\\$PATH\\\"\" >> ~/.bashrc 2>/dev/null || true' || true",
+      "sudo -u openclaw bash -c 'echo \"export PATH=\\\"\\\$HOME/.local/share/pnpm/bin:\\\$PATH\\\"\" >> ~/.bashrc 2>/dev/null || true' || true",
+      "sudo -u openclaw bash -c 'echo \"export PATH=\\\"/usr/local/bin:\\\$PATH\\\"\" >> ~/.profile 2>/dev/null || true' || true",
+      "sudo -u openclaw bash -c 'echo \"export PATH=\\\"\\\$HOME/.local/share/pnpm/bin:\\\$PATH\\\"\" >> ~/.profile 2>/dev/null || true' || true",
 
       # Make sure pnpm bin dir exists for the user (corepack puts shims here after prepare).
       "sudo -u openclaw bash -c 'mkdir -p ~/.local/share/pnpm/bin' || true",
@@ -334,16 +330,6 @@ build {
       "LINKSCRIPT",
       "chmod +x /tmp/openclaw-link.sh",
       "sudo -u openclaw bash -l /tmp/openclaw-link.sh || echo 'User link script non-zero (non-fatal)'",
-
-      # Belt-and-suspenders direct write (as root for the file, then chown).
-      "CANDIDATE=\"/home/openclaw/.openclaw/bin/openclaw\"",
-      "cat > \"$CANDIDATE\" << 'WRAPPER' | sed 's/^[[:space:]]*//'",
-      "#!/usr/bin/env sh",
-      "export PATH=\"$HOME/.local/share/pnpm/bin:$PATH\"",
-      "exec \"$HOME/.local/share/pnpm/bin/openclaw\" \"$@\"",
-      "WRAPPER",
-      "chmod +x \"$CANDIDATE\"",
-      "chown openclaw:openclaw \"$CANDIDATE\" || true",
 
       # Root-owned link in /usr/local/bin.
       "sudo ln -sf /home/openclaw/.openclaw/bin/openclaw /usr/local/bin/openclaw || true",
