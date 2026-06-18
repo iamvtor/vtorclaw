@@ -174,9 +174,10 @@ Add-VMHardDiskDrive -VMName $vmName -Path $cidata
 Info "Starting VM..."
 Start-VM -Name $vmName
 
-Info "Waiting for guest IP (via Hyper-V integration services)..."
+Info "Waiting for guest to boot and report IP (cloud-init + Hyper-V tools)..."
 $ip = $null
-for ($i = 0; $i -lt 60; $i++) {  # up to ~2 minutes
+$maxWait = 180  # up to 6 minutes
+for ($i = 0; $i -lt $maxWait; $i++) {
     Start-Sleep -Seconds 2
     $adapter = Get-VMNetworkAdapter -VMName $vmName -ErrorAction SilentlyContinue
     if ($adapter) {
@@ -186,36 +187,39 @@ for ($i = 0; $i -lt 60; $i++) {  # up to ~2 minutes
             break
         }
     }
-    if (($i % 10) -eq 0 -and $i -gt 0) {
-        Write-Host "." -NoNewline
+    if (($i % 15) -eq 0) {
+        Write-Host "." -NoNewline -ForegroundColor DarkGray
     }
 }
+Write-Host ""
+
 if ($ip) {
     Write-Host ""
-}
-
-Write-Host ""
-Write-Host "=== ZERO-TOUCH COMPLETE ===" -ForegroundColor Green
-Write-Host "VM: $vmName"
-Write-Host ""
-Write-Host "Golden image (project root): $golden"
-Write-Host "Differencing disk: $disk"
-Write-Host "CIDATA seed: $cidata"
-Write-Host ""
-if ($ip) {
-    Write-Host "SSH into the VM with:"
+    Write-Host "=== ZERO-TOUCH COMPLETE ===" -ForegroundColor Green
+    Write-Host "VM: $vmName (ready)"
+    Write-Host ""
+    Write-Host "Golden image (project root): $golden"
+    Write-Host "Differencing disk: $disk"
+    Write-Host "CIDATA seed: $cidata"
+    Write-Host ""
+    Write-Host "SSH into the VM:"
     Write-Host "  ssh openclaw@$ip"
     Write-Host ""
-    Write-Host "Use the private key that matches the ssh_public_key in your vtorclaw.yaml."
-    Write-Host "The openclaw service should start automatically once cloud-init finishes (usually < 60s)."
+    Write-Host "Use the private key matching the ssh_public_key in your vtorclaw.yaml."
+    Write-Host "The openclaw service should be up (baked in golden + started by CIDATA)."
+    Write-Host ""
+    Write-Host "To inspect: Get-VM $vmName"
+    Write-Host "===========================" -ForegroundColor Green
 } else {
-    Write-Host "Could not auto-detect IP yet."
-    Write-Host "Find it with:"
+    Write-Host ""
+    Write-Host "VM started but IP not reported yet (may need more boot time)."
+    Write-Host "Check manually with:"
     Write-Host "  Get-VMNetworkAdapter -VMName $vmName | Select-Object -ExpandProperty IPAddresses"
-    Write-Host "Or open the VM console in Hyper-V Manager."
+    Write-Host ""
+    Write-Host "Golden image (project root): $golden"
+    Write-Host "Differencing disk: $disk"
+    Write-Host "CIDATA seed: $cidata"
+    Write-Host "===========================" -ForegroundColor Yellow
 }
-Write-Host ""
-Write-Host "To inspect the VM: Get-VM $vmName"
-Write-Host "===========================" -ForegroundColor Green
 
 Remove-Item $tmpUserData -ErrorAction SilentlyContinue
