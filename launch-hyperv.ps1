@@ -80,15 +80,10 @@ if ($spec -match 'ssh_public_key:\s*["'']?(.+?)["'']?\s*(#|$)') { $sshKey = $Mat
 # Create temp thin user-data for CIDATA (overlay on golden)
 $tmpUserData = Join-Path $env:TEMP "thin-userdata-$vmName.yaml"
 
-# Use a fixed CIDATA name (no timestamp) to avoid accumulating files on repeated runs.
-# We clean it up before each use.
+# Fixed CIDATA name (no date) in TEMP. Pre-clean to reuse the same file safely and avoid bloat.
 $cidata = Join-Path $env:TEMP "cidata-$vmName.vhdx"
-
-# Pre-clean any stale CIDATA file (common cause of "file in use")
 try { Dismount-VHD -Path $cidata -ErrorAction SilentlyContinue | Out-Null } catch {}
-if (Test-Path $cidata) {
-    Remove-Item $cidata -Force -ErrorAction SilentlyContinue | Out-Null
-}
+Remove-Item $cidata -Force -ErrorAction SilentlyContinue | Out-Null
 @"
 #cloud-config
 users:
@@ -174,9 +169,12 @@ Add-VMHardDiskDrive -VMName $vmName -Path $cidata
 Info "Starting VM..."
 Start-VM -Name $vmName
 
+# Give cloud-init a head start
+Start-Sleep -Seconds 30
+
 Info "Waiting for guest to boot and report IP (cloud-init + Hyper-V tools)..."
 $ip = $null
-$maxWait = 180  # up to 6 minutes
+$maxWait = 300  # up to 10 minutes
 for ($i = 0; $i -lt $maxWait; $i++) {
     Start-Sleep -Seconds 2
     $adapter = Get-VMNetworkAdapter -VMName $vmName -ErrorAction SilentlyContinue
