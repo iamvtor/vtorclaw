@@ -294,10 +294,10 @@ build {
 
       # PATH reinforcement for the dedicated user (same as launcher).
       "sudo -u openclaw bash -c 'mkdir -p ~/.openclaw/bin' || true",
-      "sudo -u openclaw bash -c 'echo '\''export PATH=\"/usr/local/bin:$PATH\"'\'' >> ~/.bashrc 2>/dev/null || true' || true",
-      "sudo -u openclaw bash -c 'echo '\''export PATH=\"$HOME/.local/share/pnpm/bin:$PATH\"'\'' >> ~/.bashrc 2>/dev/null || true' || true",
-      "sudo -u openclaw bash -c 'echo '\''export PATH=\"/usr/local/bin:$PATH\"'\'' >> ~/.profile 2>/dev/null || true' || true",
-      "sudo -u openclaw bash -c 'echo '\''export PATH=\"$HOME/.local/share/pnpm/bin:$PATH\"'\'' >> ~/.profile 2>/dev/null || true' || true",
+      "sudo -u openclaw bash -c \"echo 'export PATH=\"/usr/local/bin:$PATH\"' >> ~/.bashrc 2>/dev/null || true\" || true",
+      "sudo -u openclaw bash -c \"echo 'export PATH=\"$HOME/.local/share/pnpm/bin:$PATH\"' >> ~/.bashrc 2>/dev/null || true\" || true",
+      "sudo -u openclaw bash -c \"echo 'export PATH=\"/usr/local/bin:$PATH\"' >> ~/.profile 2>/dev/null || true\" || true",
+      "sudo -u openclaw bash -c \"echo 'export PATH=\"$HOME/.local/share/pnpm/bin:$PATH\"' >> ~/.profile 2>/dev/null || true\" || true",
 
       # Make sure pnpm bin dir exists for the user (corepack puts shims here after prepare).
       "sudo -u openclaw bash -c 'mkdir -p ~/.local/share/pnpm/bin' || true",
