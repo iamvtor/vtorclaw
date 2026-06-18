@@ -79,6 +79,15 @@ if ($spec -match 'ssh_public_key:\s*["'']?(.+?)["'']?\s*(#|$)') { $sshKey = $Mat
 
 # Create temp thin user-data for CIDATA (overlay on golden)
 $tmpUserData = Join-Path $env:TEMP "thin-userdata-$vmName-$(Get-Date -Format 'yyyyMMddHHmmss').yaml"
+
+# Use a unique CIDATA path each run to avoid "file in use" from previous attempts
+$cidata = Join-Path $env:TEMP "cidata-$vmName-$(Get-Date -Format 'yyyyMMddHHmmss').vhdx"
+
+# Pre-clean any stale CIDATA file (common cause of "file in use")
+try { Dismount-VHD -Path $cidata -ErrorAction SilentlyContinue } catch {}
+if (Test-Path $cidata) {
+    Remove-Item $cidata -Force -ErrorAction SilentlyContinue
+}
 @"
 #cloud-config
 users:
@@ -122,7 +131,6 @@ runcmd:
 "@ | Set-Content -Path $tmpUserData -Encoding UTF8
 
 # Generate CIDATA (suppress helper's chatty instructions)
-$cidata = Join-Path $env:TEMP "cidata-$vmName.vhdx"
 & .\scripts\new-cidata-drive.ps1 -UserDataPath $tmpUserData -OutputPath $cidata -SizeMB 64 | Out-Null
 if (-not (Test-Path $cidata)) {
     Err "CIDATA generation failed"
