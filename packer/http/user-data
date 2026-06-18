@@ -13,6 +13,11 @@ runcmd:
       # Give cloud-init + late-command user/home/.ssh setup a moment to finish on first boot
       sleep 20
       while true; do
+        # Ensure home and .ssh exist with correct ownership (fallback if late-commands timing was off)
+        mkdir -p /home/ubuntu/.ssh 2>/dev/null || true
+        chown -R ubuntu:ubuntu /home/ubuntu 2>/dev/null || true
+        chmod 755 /home/ubuntu 2>/dev/null || true
+        chmod 700 /home/ubuntu/.ssh 2>/dev/null || true
         {
           echo "=== PACKER AUTO-DIAG $(date) ==="
           echo "Guest IPs:"
@@ -69,7 +74,6 @@ autoinstall:
     hostname: openclaw-golden
     username: ubuntu
     password: "$6$VKeUXi/iUw7gj5/C$Ok5ZA.fjMcZFG/GAkDz9LWUWvCi9Gdo4KlKINAkC//zhB3yOOPrk4Ws8iFjozEa7WE2QBpuTtPy6ugsWnTUh01"
-    lock_passwd: true   # cloud-init should not treat the password as usable for login
   ssh:
     install-server: true
     allow-pw: true
@@ -80,7 +84,9 @@ autoinstall:
     - "test -f /target/etc/ssh/sshd_config && sed -i 's/^#*PermitRootLogin .*/PermitRootLogin no/' /target/etc/ssh/sshd_config || true"
     - "test -f /target/etc/ssh/sshd_config && echo 'PermitUserEnvironment yes' >> /target/etc/ssh/sshd_config || true"
     # No Subsystem sftp so Packer falls back to scp for uploads (scp binary provided by openssh-client package)
-    - "chroot /target mkdir -p /home/ubuntu && chroot /target chown ubuntu:ubuntu /home/ubuntu && chroot /target chmod 755 /home/ubuntu || true"
+    - "chroot /target mkdir -p /home/ubuntu || true"
+    - "chroot /target chown ubuntu:ubuntu /home/ubuntu 2>/dev/null || true"
+    - "chroot /target chmod 755 /home/ubuntu || true"
     # Install the build host's SSH public key for key-based auth (PasswordAuthentication is disabled).
     # >>> REPLACE THE LINE BELOW WITH YOUR REAL PUBLIC KEY BEFORE BUILDING <<<
     # Generate one with: ssh-keygen -t ed25519 -f ~/.ssh/packer_build_key
@@ -88,11 +94,11 @@ autoinstall:
     # After editing, load the private key into your agent before packer build:
     #   - OpenSSH: Start-Service ssh-agent; ssh-add ~/.ssh/packer_build_key
     #   - Or use PuTTY Pageant.
-    - "chroot /target mkdir -p /home/ubuntu/.ssh"
-    - "echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI___REPLACE_ME_WITH_YOUR_ACTUAL_PUBLIC_KEY___ packer-build' > /target/home/ubuntu/.ssh/authorized_keys"
-    - "chroot /target chown -R ubuntu:ubuntu /home/ubuntu/.ssh"
-    - "chroot /target chmod 700 /home/ubuntu/.ssh"
-    - "chroot /target chmod 600 /home/ubuntu/.ssh/authorized_keys"
+    - "chroot /target mkdir -p /home/ubuntu/.ssh || true"
+    - "echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI___REPLACE_ME_WITH_YOUR_ACTUAL_PUBLIC_KEY___ packer-build' > /target/home/ubuntu/.ssh/authorized_keys || true"
+    - "chroot /target chown -R ubuntu:ubuntu /home/ubuntu/.ssh || true"
+    - "chroot /target chmod 700 /home/ubuntu/.ssh || true"
+    - "chroot /target chmod 600 /home/ubuntu/.ssh/authorized_keys || true"
     - "echo 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin' > /target/home/ubuntu/.ssh/environment"
     - "chroot /target chown ubuntu:ubuntu /home/ubuntu/.ssh/environment"
     - "chroot /target chmod 600 /home/ubuntu/.ssh/environment"
@@ -104,11 +110,9 @@ autoinstall:
     - "chmod 440 /target/etc/sudoers.d/ubuntu"
     - "chroot /target systemctl enable --now ssh || true"
     - "echo 'ubuntu:$6$VKeUXi/iUw7gj5/C$Ok5ZA.fjMcZFG/GAkDz9LWUWvCi9Gdo4KlKINAkC//zhB3yOOPrk4Ws8iFjozEa7WE2QBpuTtPy6ugsWnTUh01' | chpasswd -e -R /target || true"
-    # Nuke password expiration and the password itself. chage -d 0 marks it "expired since 1970" which forces change on login (even key auth).
-    # Use -E -1 (never expire), delete the pw hash, empty the shadow field. This prevents the "password expired, change required, no TTY" error.
-    - "chroot /target chage -E -1 -M -1 -I -1 -m 0 -W 0 ubuntu || true"
-    - "chroot /target passwd -d ubuntu || true"
-    - "sed -i 's/^ubuntu:[^:]*:/ubuntu::/' /target/etc/shadow || true"
+    # Prevent password aging/forced change on next login (the old -d 0 set last change to 1970 which triggers "password expired" even for key auth).
+    # Set never expire. Do not delete the password hash or empty the shadow field — that broke user creation/login for SSH.
+    - "chroot /target chage -E -1 -M 99999 -I -1 ubuntu || true"
     - "chroot /target passwd -u ubuntu || true"
     - "chroot /target ufw allow 22/tcp || true"
     - "chroot /target ufw --force disable || true"
