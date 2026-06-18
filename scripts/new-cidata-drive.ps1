@@ -81,7 +81,9 @@ if (-not $OutputPath) {
     $OutputPath = Join-Path $env:TEMP "openclaw-cidata-$ts.vhdx"
 }
 
-Write-Host "[INFO] Creating CIDATA seed VHDX at $OutputPath (label=$Label)" -ForegroundColor Cyan
+if (-not $Quiet) {
+    Write-Host "[INFO] Creating CIDATA seed VHDX at $OutputPath (label=$Label)" -ForegroundColor Cyan
+}
 
 # Create a small dynamic VHDX.
 if (Test-Path $OutputPath) { Remove-Item $OutputPath -Force }
