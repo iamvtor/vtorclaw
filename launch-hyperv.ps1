@@ -78,15 +78,16 @@ $sshKey = ""
 if ($spec -match 'ssh_public_key:\s*["'']?(.+?)["'']?\s*(#|$)') { $sshKey = $Matches[1].Trim() }
 
 # Create temp thin user-data for CIDATA (overlay on golden)
-$tmpUserData = Join-Path $env:TEMP "thin-userdata-$vmName-$(Get-Date -Format 'yyyyMMddHHmmss').yaml"
+$tmpUserData = Join-Path $env:TEMP "thin-userdata-$vmName.yaml"
 
-# Use a unique CIDATA path each run to avoid "file in use" from previous attempts
-$cidata = Join-Path $env:TEMP "cidata-$vmName-$(Get-Date -Format 'yyyyMMddHHmmss').vhdx"
+# Use a fixed CIDATA name (no timestamp) to avoid accumulating files on repeated runs.
+# We clean it up before each use.
+$cidata = Join-Path $env:TEMP "cidata-$vmName.vhdx"
 
 # Pre-clean any stale CIDATA file (common cause of "file in use")
-try { Dismount-VHD -Path $cidata -ErrorAction SilentlyContinue } catch {}
+try { Dismount-VHD -Path $cidata -ErrorAction SilentlyContinue | Out-Null } catch {}
 if (Test-Path $cidata) {
-    Remove-Item $cidata -Force -ErrorAction SilentlyContinue
+    Remove-Item $cidata -Force -ErrorAction SilentlyContinue | Out-Null
 }
 @"
 #cloud-config
@@ -189,9 +190,11 @@ for ($i = 0; $i -lt 30; $i++) {
 
 Write-Host ""
 Write-Host "=== ZERO-TOUCH COMPLETE ===" -ForegroundColor Green
-Write-Host "VM: $vmName (using differencing disk off golden)"
-Write-Host "Golden: $golden"
-Write-Host "CIDATA: $cidata"
+Write-Host "VM: $vmName"
+Write-Host ""
+Write-Host "Golden image (project root): $golden"
+Write-Host "Differencing disk: $disk"
+Write-Host "CIDATA seed: $cidata"
 Write-Host ""
 if ($ip) {
     Write-Host "SSH into the VM with:"

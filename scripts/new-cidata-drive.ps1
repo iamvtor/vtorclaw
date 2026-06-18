@@ -117,11 +117,8 @@ local-hostname: openclaw
     Get-ChildItem $root | Format-Table Name, Length -AutoSize | Out-String | Write-Host
 
     Write-Host "[INFO] Seed disk ready: $OutputPath" -ForegroundColor Green
-    Write-Host "Attach it as a second hard disk when you do New-VM (or Add-VMHardDiskDrive after creation)." -ForegroundColor Yellow
-    Write-Host "Example:" -ForegroundColor Yellow
-    Write-Host "  New-VM -Name myclaw -MemoryStartupBytes 8GB -VHDPath C:\VMs\golden.vhdx -SwitchName 'Default Switch'"
-    Write-Host "  Add-VMHardDiskDrive -VMName myclaw -Path $OutputPath"
-    Write-Host "  Start-VM myclaw"
+    # Instructions are handled by the calling launcher script (launch-hyperv.ps1).
+    # If running this helper standalone, attach the VHDX as a second hard disk to your VM.
 } finally {
     Dismount-VHD -Path $OutputPath -ErrorAction SilentlyContinue
 }
