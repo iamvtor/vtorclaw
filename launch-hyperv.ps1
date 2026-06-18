@@ -1,21 +1,19 @@
-<# 
+<#
 .SYNOPSIS
-    One single command for a fully working OpenClaw VM on native Hyper-V (zero touch).
+    One-command zero-touch for OpenClaw on native Hyper-V using the Packer golden + CIDATA.
 
 .DESCRIPTION
-    Run this from the repo root with your vtorclaw.yaml.
-    It will:
-    - Build the golden VHDX if it doesn't exist (packer).
-    - Generate CIDATA from your spec (token, config, ssh key).
-    - Create a Hyper-V VM using a fast differencing disk of the golden.
-    - Attach the CIDATA.
-    - Start the VM.
-    When it finishes, you have a running openclaw instance. No other commands required.
+    Single script at root.
+    - Ensures openclaw-golden.vhdx exists (builds with packer if missing).
+    - Generates CIDATA from your vtorclaw.yaml.
+    - Creates (or cleans) Hyper-V VM with differencing disk off the golden.
+    - Attaches CIDATA as second hard disk.
+    - Starts the VM.
 
-    Requires: PowerShell 7+, Hyper-V enabled, the packer golden build dependencies.
+    Run as Administrator. PowerShell 7+ required.
 
 .PARAMETER Spec
-    Your vtorclaw.yaml
+    Path to vtorclaw.yaml
 
 .EXAMPLE
     pwsh -File .\launch-hyperv.ps1 -Spec vtorclaw.yaml
@@ -31,22 +29,25 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 if ($PSVersionTable.PSVersion.Major -lt 7) {
-    Write-Host "Use pwsh.exe (PowerShell 7+)" -ForegroundColor Red
+    Write-Host "ERROR: Requires PowerShell 7+ (pwsh.exe)" -ForegroundColor Red
     exit 1
 }
 
-# Elevation check - required for New-VM, Mount-VHD, etc.
-$currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
-if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Write-Host "[ERROR] This script requires Administrator privileges." -ForegroundColor Red
-    Write-Host "Right-click the PowerShell window title and choose 'Run as Administrator', then re-run the script." -ForegroundColor Yellow
-    Write-Host "Example: pwsh -File .\launch-hyperv.ps1 -Spec vtorclaw.yaml" -ForegroundColor Yellow
+# Require admin for Hyper-V disk/VM operations
+$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    Write-Host "ERROR: Must run as Administrator (right-click pwsh -> Run as Administrator)" -ForegroundColor Red
     exit 1
 }
 
 function Info($m) { Write-Host "[INFO] $m" -ForegroundColor Cyan }
+function Warn($m) { Write-Host "[WARN] $m" -ForegroundColor Yellow }
+function Err($m) { Write-Host "[ERROR] $m" -ForegroundColor Red }
 
-if (-not (Test-Path $Spec)) { throw "Spec not found: $Spec. Copy the example and edit." }
+if (-not (Test-Path $Spec)) {
+    Err "Spec not found: $Spec"
+    exit 1
+}
 
 $spec = Get-Content $Spec -Raw
 
@@ -56,29 +57,33 @@ $cpu = if ($Cpus) { $Cpus } elseif ($spec -match 'cpus:\s*["'']?(\d+)') { [int]$
 
 $golden = "openclaw-golden.vhdx"
 if (-not (Test-Path $golden)) {
-    Info "Building golden image (one-time cost)..."
+    Info "Golden VHDX not found. Building it (one-time)..."
     Push-Location packer
-    & packer build -var "cpus=$cpu" -var "memory=8192" openclaw.pkr.hcl
+    & packer build -var "cpus=$cpu" -var "memory=8192" .\openclaw.pkr.hcl
     Pop-Location
-    if (-not (Test-Path $golden)) { throw "Golden build failed - check packer output" }
-    Info "Golden ready."
+    if (-not (Test-Path $golden)) {
+        Err "Packer failed to produce $golden"
+        exit 1
+    }
+    Info "Golden built."
 }
 
-Info "Preparing VM $vmName"
+Info "Preparing VM '$vmName'"
 
-# Generate token
-$token = -join ((48..57)+(65..90)+(97..122) | Get-Random -Count 32 | ForEach {[char]$_})
+# Generate token (simple)
+$token = -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 48 | ForEach-Object {[char]$_})
 
-# Extract ssh key if present
+# Extract ssh key from spec if present
 $sshKey = ""
-if ($spec -match 'ssh_public_key:\s*["'']?(.+?)["'']?\s*$') { $sshKey = $Matches[1].Trim() }
+if ($spec -match 'ssh_public_key:\s*["'']?(.+?)["'']?\s*(#|$)') { $sshKey = $Matches[1].Trim() }
 
-$tmpUserData = [System.IO.Path]::GetTempFileName() + ".yaml"
+# Create temp thin user-data for CIDATA (overlay on golden)
+$tmpUserData = Join-Path $env:TEMP "thin-userdata-$vmName-$(Get-Date -Format 'yyyyMMddHHmmss').yaml"
 @"
 #cloud-config
 users:
   - name: openclaw
-    gecos: "OpenClaw"
+    gecos: OpenClaw Gateway
     system: true
     shell: /bin/bash
     lock_passwd: true
@@ -113,36 +118,63 @@ runcmd:
   - chown -R openclaw:openclaw /home/openclaw/.openclaw || true
   - systemctl daemon-reload || true
   - systemctl enable --now openclaw-gateway.service || true
-  - echo "OpenClaw is ready. Connect as the openclaw user with your SSH key."
+  - echo "OpenClaw ready (token and config injected via CIDATA)."
 "@ | Set-Content -Path $tmpUserData -Encoding UTF8
 
+# Generate CIDATA (suppress helper's chatty instructions)
 $cidata = Join-Path $env:TEMP "cidata-$vmName.vhdx"
-Info "Generating CIDATA..."
 & .\scripts\new-cidata-drive.ps1 -UserDataPath $tmpUserData -OutputPath $cidata -SizeMB 64 | Out-Null
+if (-not (Test-Path $cidata)) {
+    Err "CIDATA generation failed"
+    exit 1
+}
 Info "CIDATA ready at $cidata"
 
+# Cleanup any existing VM/disk with same name (to avoid "file in use")
+if (Get-VM -Name $vmName -ErrorAction SilentlyContinue) {
+    Warn "Existing VM '$vmName' found - stopping and removing for clean run"
+    Stop-VM -Name $vmName -Force -ErrorAction SilentlyContinue
+    Remove-VM -Name $vmName -Force -ErrorAction SilentlyContinue
+}
+
 $vmDir = "C:\VMs\$vmName"
-New-Item -ItemType Directory -Force -Path $vmDir | Out-Null
+if (Test-Path $vmDir) {
+    Remove-Item "$vmDir\*" -Force -Recurse -ErrorAction SilentlyContinue
+} else {
+    New-Item -ItemType Directory -Force -Path $vmDir | Out-Null
+}
 
 $disk = Join-Path $vmDir "$vmName.vhdx"
 if (Test-Path $disk) { Remove-Item $disk -Force }
+
+Info "Creating differencing disk from golden..."
 New-VHD -Path $disk -ParentPath (Resolve-Path $golden).Path -Differencing | Out-Null
 
-Info "Creating and starting Hyper-V VM..."
-New-VM -Name $vmName -MemoryStartupBytes ([int64]($memStr -replace '[^0-9]','')*1GB) -VHDPath $disk -SwitchName "Default Switch" -Generation 2 | Out-Null
+Info "Creating Hyper-V VM..."
+New-VM -Name $vmName `
+    -MemoryStartupBytes ([int64]($memStr -replace '[^0-9]','') * 1GB) `
+    -VHDPath $disk `
+    -SwitchName "Default Switch" `
+    -Generation 2 | Out-Null
+
 Set-VMProcessor -VMName $vmName -Count $cpu
+
+Info "Attaching CIDATA as second hard disk..."
 Add-VMHardDiskDrive -VMName $vmName -Path $cidata
+
+Info "Starting VM..."
 Start-VM -Name $vmName
 
 Write-Host ""
-Write-Host "=== DONE. Your openclaw VM is booting. ===" -ForegroundColor Green
-Write-Host "VM Name: $vmName"
-Write-Host "Use Hyper-V Manager or: Get-VM $vmName"
-Write-Host "Connect as 'openclaw' user with the SSH key from your spec."
-Write-Host "The service should start automatically."
-Write-Host "Golden used: $golden (differencing disk)"
-Write-Host "=========================================" -ForegroundColor Green
+Write-Host "=== ZERO-TOUCH COMPLETE ===" -ForegroundColor Green
+Write-Host "VM: $vmName (using differencing disk off golden)"
+Write-Host "Golden: $golden"
+Write-Host "CIDATA: $cidata"
+Write-Host ""
+Write-Host "The VM is starting. Give it 30-90 seconds."
+Write-Host "Connect with your SSH key from the spec as the 'openclaw' user."
+Write-Host "openclaw service should be up (baked into golden + activated by CIDATA)."
+Write-Host "To inspect: Get-VM $vmName"
+Write-Host "===========================" -ForegroundColor Green
 
 Remove-Item $tmpUserData -ErrorAction SilentlyContinue
-ENDSCRIPT
-Write-Host "Root-level one-command launch-hyperv.ps1 created/updated."
