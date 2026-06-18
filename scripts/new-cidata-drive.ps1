@@ -117,8 +117,6 @@ local-hostname: openclaw
     Get-ChildItem $root | Format-Table Name, Length -AutoSize | Out-String | Write-Host
 
     Write-Host "[INFO] Seed disk ready: $OutputPath" -ForegroundColor Green
-    # Instructions are handled by the calling launcher script (launch-hyperv.ps1).
-    # If running this helper standalone, attach the VHDX as a second hard disk to your VM.
 } finally {
     Dismount-VHD -Path $OutputPath -ErrorAction SilentlyContinue
 }

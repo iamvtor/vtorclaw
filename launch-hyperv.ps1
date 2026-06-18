@@ -132,7 +132,7 @@ runcmd:
 "@ | Set-Content -Path $tmpUserData -Encoding UTF8
 
 # Generate CIDATA (suppress helper's chatty instructions)
-& .\scripts\new-cidata-drive.ps1 -UserDataPath $tmpUserData -OutputPath $cidata -SizeMB 64 | Out-Null
+& .\scripts\new-cidata-drive.ps1 -UserDataPath $tmpUserData -OutputPath $cidata -SizeMB 64 *>&1 | Out-Null
 if (-not (Test-Path $cidata)) {
     Err "CIDATA generation failed"
     exit 1
@@ -176,7 +176,7 @@ Start-VM -Name $vmName
 
 Info "Waiting for guest IP (via Hyper-V integration services)..."
 $ip = $null
-for ($i = 0; $i -lt 30; $i++) {
+for ($i = 0; $i -lt 60; $i++) {  # up to ~2 minutes
     Start-Sleep -Seconds 2
     $adapter = Get-VMNetworkAdapter -VMName $vmName -ErrorAction SilentlyContinue
     if ($adapter) {
@@ -186,6 +186,12 @@ for ($i = 0; $i -lt 30; $i++) {
             break
         }
     }
+    if (($i % 10) -eq 0 -and $i -gt 0) {
+        Write-Host "." -NoNewline
+    }
+}
+if ($ip) {
+    Write-Host ""
 }
 
 Write-Host ""
