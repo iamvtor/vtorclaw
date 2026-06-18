@@ -223,12 +223,12 @@ build {
   # if needed). This early provisioner attempts to attach the pipe automatically as soon
   # as the VM object exists.
   provisioner "shell-local" {
-    # Single command so that the body is passed inside -Command "..." and $vars + pipe path survive.
-    # We use bare $ (HCL allows it; only \\ \" \n etc. are escapes). For the pipe we need to emit
-    # literal \\.\pipe\... so in this HCL "..." we write \\\\ for each \ .
+    # Quick best-effort attach of the serial pipe. The main logic + waiting + logging is in
+    # packer/monitor-build.ps1 (run it in a second window). This just tries once if the VM
+    # object is already visible to Get-VM at this point in the build.
     environment_vars = ["BUILD_VM_NAME=${var.build_vm_name}"]
     inline = [
-      "powershell -NoProfile -Command \"& { $vmName = 'openclaw-packer-build'; if ($env:BUILD_VM_NAME) { $vmName = $env:BUILD_VM_NAME }; Write-Host ('Waiting for VM ' + $vmName + ' to exist...'); $deadline = (Get-Date).AddMinutes(3); while (-not (Get-VM -Name $vmName -ErrorAction SilentlyContinue)) { if ((Get-Date) -gt $deadline) { Write-Host 'Timed out waiting for VM object'; break }; Start-Sleep -Milliseconds 500 }; if (Get-VM -Name $vmName -ErrorAction SilentlyContinue) { Set-VMComPort -VMName $vmName -Number 1 -Path '\\\\.\\pipe\\openclaw-serial' -ErrorAction SilentlyContinue; Write-Host ('Serial pipe attached: \\\\.\\pipe\\openclaw-serial for ' + $vmName) } else { Write-Host ('Could not attach pipe: VM ' + $vmName + ' not found') } }\""
+      "powershell -NoProfile -Command \"& { $vmName = if ($env:BUILD_VM_NAME) { $env:BUILD_VM_NAME } else { 'openclaw-packer-build' }; if (Get-VM -Name $vmName -ErrorAction SilentlyContinue) { Set-VMComPort -VMName $vmName -Number 1 -Path '\\\\.\\pipe\\openclaw-serial' -ErrorAction SilentlyContinue; Write-Host ('Serial pipe attached for ' + $vmName) } }\""
     ]
   }
 
