@@ -130,7 +130,7 @@ New-VHD -Path $disk -ParentPath (Resolve-Path $golden).Path -Differencing | Out-
 Info "Creating and starting Hyper-V VM..."
 New-VM -Name $vmName -MemoryStartupBytes ([int64]($memStr -replace '[^0-9]','')*1GB) -VHDPath $disk -SwitchName "Default Switch" -Generation 2 | Out-Null
 Set-VMProcessor -VMName $vmName -Count $cpu
-Add-VMDvdDrive -VMName $vmName -Path $cidata
+Add-VMHardDiskDrive -VMName $vmName -Path $cidata
 Start-VM -Name $vmName
 
 Write-Host ""
