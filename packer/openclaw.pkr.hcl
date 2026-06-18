@@ -285,6 +285,7 @@ build {
 
   # 3. The critical pnpm global install + stable wrapper + dual symlinks.
   #    This block is intentionally very close to the one in scripts/launch.ps1 so behavior is identical.
+  #    Fixed quoting/heredoc issues that were causing pnpm not found + dangling symlinks + permission errors.
   provisioner "shell" {
     inline = [
       "set -e",
@@ -302,51 +303,54 @@ build {
       "  done",
       "' || true",
 
+      # Make sure pnpm bin dir exists for the user (corepack puts shims here after prepare).
+      "sudo -u openclaw bash -c 'mkdir -p ~/.local/share/pnpm/bin' || true",
+
       # Official pnpm global install (as the openclaw user, with login shell so profile is sourced).
       "echo 'Running pnpm add -g openclaw ...'",
       "sudo -u openclaw bash -l -c '",
       "  corepack prepare pnpm@latest --activate || true",
       "  export PATH=\"\\$HOME/.local/share/pnpm/bin:\\$PATH\"",
+      "  pnpm --version || echo 'pnpm not yet in PATH after prepare'",
       "  pnpm add -g openclaw",
       "  pnpm rebuild -g openclaw || true",
       "' || true",
 
-      # Stable wrapper creation (exact dedent + sed pattern from the launcher so the wrapper is identical).
-      # We create it at the canonical /home/openclaw/.openclaw/bin/openclaw location.
+      # Stable wrapper + links, using a /tmp script (like launch.ps1) to avoid fragile nested heredocs inside -c strings.
       "echo 'Creating stable wrapper + force links...'",
 
-      "sudo -u openclaw bash -c '",
-      "  set -e",
-      "  mkdir -p /home/openclaw/.openclaw/bin",
-      "  CANDIDATE=\"/home/openclaw/.openclaw/bin/openclaw\"",
-      "  cat > \"\\$CANDIDATE\" << \"WRAPPER\" | sed \"s/^[[:space:]]*//\"",
-      "  #!/usr/bin/env sh",
-      "  export PATH=\"\\$HOME/.local/share/pnpm/bin:\\$PATH\"",
-      "  exec \"\\$HOME/.local/share/pnpm/bin/openclaw\" \"\\$@\"",
-      "  WRAPPER",
-      "  chmod +x \"\\$CANDIDATE\"",
-      "  chown openclaw:openclaw \"\\$CANDIDATE\"",
-      "  echo \"  stable wrapper at \\$CANDIDATE\"",
-      "' || true",
-
-      # Belt-and-suspenders: ensure wrapper again (in case the heredoc under sudo had issues).
+      "cat > /tmp/openclaw-link.sh << 'LINKSCRIPT'",
+      "set -e",
+      "mkdir -p /home/openclaw/.openclaw/bin",
       "CANDIDATE=\"/home/openclaw/.openclaw/bin/openclaw\"",
-      "sudo -u openclaw bash -c '",
-      "  cat > \"\\$CANDIDATE\" << \"WRAPPER\" | sed \"s/^[[:space:]]*//\"",
-      "  #!/usr/bin/env sh",
-      "  export PATH=\"\\$HOME/.local/share/pnpm/bin:\\$PATH\"",
-      "  exec \"\\$HOME/.local/share/pnpm/bin/openclaw\" \"\\$@\"",
-      "  WRAPPER",
-      "  chmod +x \"\\$CANDIDATE\"",
-      "  chown openclaw:openclaw \"\\$CANDIDATE\" || true",
-      "' || true",
+      "cat > \"$CANDIDATE\" << 'WRAPPER' | sed 's/^[[:space:]]*//'",
+      "#!/usr/bin/env sh",
+      "export PATH=\"\$HOME/.local/share/pnpm/bin:\$PATH\"",
+      "exec \"\$HOME/.local/share/pnpm/bin/openclaw\" \"\$@\"",
+      "WRAPPER",
+      "chmod +x \"\$CANDIDATE\"",
+      "chown openclaw:openclaw \"\$CANDIDATE\"",
+      "echo \"  stable wrapper at \$CANDIDATE\"",
+      "LINKSCRIPT",
+      "chmod +x /tmp/openclaw-link.sh",
+      "sudo -u openclaw bash -l /tmp/openclaw-link.sh || echo 'User link script non-zero (non-fatal)'",
 
-      # Root-owned link in /usr/local/bin so bare `openclaw` works after sudo or in PATH.
+      # Belt-and-suspenders direct write (as root for the file, then chown).
+      "CANDIDATE=\"/home/openclaw/.openclaw/bin/openclaw\"",
+      "cat > \"$CANDIDATE\" << 'WRAPPER' | sed 's/^[[:space:]]*//'",
+      "#!/usr/bin/env sh",
+      "export PATH=\"\$HOME/.local/share/pnpm/bin:\$PATH\"",
+      "exec \"\$HOME/.local/share/pnpm/bin/openclaw\" \"\$@\"",
+      "WRAPPER",
+      "chmod +x \"$CANDIDATE\"",
+      "chown openclaw:openclaw \"$CANDIDATE\" || true",
+
+      # Root-owned link in /usr/local/bin.
       "sudo ln -sf /home/openclaw/.openclaw/bin/openclaw /usr/local/bin/openclaw || true",
       "sudo chmod +x /usr/local/bin/openclaw || true",
       "ls -l /usr/local/bin/openclaw || true",
 
-      # Quick verification markers (easy to grep in packer logs).
+      # Quick verification markers.
       "if [ -x /home/openclaw/.openclaw/bin/openclaw ]; then echo 'VERIFIED: /home/openclaw/.openclaw/bin/openclaw'; else echo 'MISSING: user bin'; fi",
       "if [ -x /usr/local/bin/openclaw ]; then echo 'VERIFIED: /usr/local/bin/openclaw'; else echo 'MISSING: /usr/local/bin'; fi",
       "echo '=== OPENCLAW PACKER BAKE END ==='"
@@ -447,16 +451,18 @@ build {
   }
 
   # Tell the user exactly where the usable disk is after the build VM is cleaned up.
+  # Use cmd-compatible echo (the .cmd wrapper Packer generates for shell-local post on Windows
+  # is executed by cmd.exe, not PowerShell). Use explicit powershell for colors if desired.
   post-processor "shell-local" {
     inline = [
-      "Write-Host 'Packer build finished.' -ForegroundColor Green",
-      "Write-Host ''",
-      "Write-Host 'The golden VHDX is under the output directory. Typical location:' -ForegroundColor Cyan",
-      "Write-Host '  .\\packer\\output-openclaw\\Virtual Hard Disks\\${var.build_vm_name}.vhdx' -ForegroundColor Yellow",
-      "Write-Host '  (or open the output-openclaw folder and look for the .vhdx)'",
-      "Write-Host ''",
-      "Write-Host 'Next: use that .vhdx (copy it or make a differencing child) with native Hyper-V New-VM.' -ForegroundColor Cyan",
-      "Write-Host 'A thin CIDATA config drive (generated from your vtorclaw.yaml) supplies the real token, ssh public key (for openclaw as default login user), and per-instance openclaw.json.' -ForegroundColor Cyan"
+      "echo Packer build finished.",
+      "echo.",
+      "echo The golden VHDX is under the output directory. Typical location:",
+      "echo   .\\packer\\output-openclaw\\Virtual Hard Disks\\${var.build_vm_name}.vhdx",
+      "echo   (or open the output-openclaw folder and look for the .vhdx)",
+      "echo.",
+      "echo Next: use that .vhdx (copy it or make a differencing child) with native Hyper-V New-VM.",
+      "echo A thin CIDATA config drive (generated from your vtorclaw.yaml) supplies the real token, ssh public key (for openclaw as default login user), and per-instance openclaw.json."
     ]
     only_on = ["windows"]
   }
