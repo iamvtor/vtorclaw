@@ -103,37 +103,54 @@ while ($true) {
 
     if ($currentIp) {
         $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+
+        # Build remote diagnostic script with explicit LF line endings only.
+        # Pipe via stdin to 'bash -s' to avoid CRLF (\r) problems when this
+        # script runs on Windows and ssh passes a multi-line "command" string.
+        $remote = @"
+echo 'Guest IP:'
+ip -4 addr show | grep -E 'inet '
+echo '---'
+echo 'ls -ld /tmp /home/ubuntu:'
+ls -ld /tmp /home/ubuntu 2>&1
+echo '---'
+echo 'ls -ld /home/ubuntu/.ssh and perms:'
+ls -ld /home/ubuntu/.ssh /home/ubuntu/.ssh/* 2>&1 || true
+echo '---'
+echo 'scp location:'
+ls -l /usr/bin/scp 2>/dev/null || ls -l /usr/bin/scp 2>&1 || echo 'no scp'
+echo '---'
+echo 'PATH (from env):'
+env | grep -E '^PATH=' || true
+echo '---'
+echo '~/.ssh/environment contents:'
+cat /home/ubuntu/.ssh/environment 2>/dev/null || echo '(no .ssh/environment)'
+echo '---'
+echo 'authorized_keys (last 80 chars):'
+tail -c 80 /home/ubuntu/.ssh/authorized_keys 2>/dev/null || echo 'no key file'
+echo '---'
+echo 'chage -l (to check expiration):'
+chage -l ubuntu 2>/dev/null || true
+echo 'shadow entry:'
+grep '^ubuntu:' /etc/shadow 2>/dev/null || true
+echo '---'
+echo 'Recent dmesg / journal:'
+dmesg | tail -5 2>/dev/null || true
+journalctl --no-pager -n 10 2>/dev/null || true
+echo '---'
+echo 'Packer test files in /tmp or /home/ubuntu:'
+ls -l /tmp/packer* /home/ubuntu/packer* 2>/dev/null || echo 'none yet'
+"@ -replace "`r`n", "`n" -replace "`r", ""
+
+        $sshOut = $remote | & ssh -o BatchMode=yes -o ConnectTimeout=10 `
+            -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null `
+            $sshUser@$currentIp 'bash -s' 2>&1
+
         $diag = @"
 [$ts] === GUEST DIAGNOSTICS ===
 IP: $currentIp
 ---
-$(ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $sshUser@$currentIp "
-  echo 'Guest IP:'; ip -4 addr show | grep -E 'inet '
-  echo '---'
-  echo 'ls -ld /tmp /home/ubuntu:'
-  ls -ld /tmp /home/ubuntu 2>&1
-  echo '---'
-  echo 'scp location:'
-  ls -l /usr/bin/scp 2>/dev/null || ls -l /usr/bin/scp 2>&1 || echo 'no scp'
-  echo '---'
-  echo 'PATH:'
-  echo \$PATH
-  echo '---'
-  echo 'authorized_keys (last 80 chars):'
-  tail -c 80 /home/ubuntu/.ssh/authorized_keys 2>/dev/null || echo 'no key file'
-  echo '---'
-  echo 'chage -l (to check expiration):'
-  chage -l ubuntu 2>/dev/null || true
-  echo 'shadow entry:'
-  grep '^ubuntu:' /etc/shadow 2>/dev/null || true
-  echo '---'
-  echo 'Recent dmesg / journal:'
-  dmesg | tail -5 2>/dev/null || true
-  journalctl --no-pager -n 10 2>/dev/null || true
-  echo '---'
-  echo 'Packer test files in /tmp or /home/ubuntu:'
-  ls -l /tmp/packer* /home/ubuntu/packer* 2>/dev/null || echo 'none yet'
-" 2>&1 || echo '(ssh poll failed or returned non-zero)')
+$sshOut
 "@
 
         $diag | Out-File -Append -FilePath $diagLog -Encoding UTF8
