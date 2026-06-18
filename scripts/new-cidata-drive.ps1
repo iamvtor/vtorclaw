@@ -64,7 +64,9 @@ param(
     [int]$SizeMB = 64,
 
     [Parameter(Mandatory=$false)]
-    [string]$Label = "CIDATA"
+    [string]$Label = "CIDATA",
+
+    [switch]$Quiet
 )
 
 Set-StrictMode -Version Latest
@@ -113,10 +115,12 @@ local-hostname: openclaw
     # Optional: a network-config stub (cloud-init will use DHCP if absent).
     # You can extend this helper later if you want static IPs etc.
 
-    Write-Host "[INFO] CIDATA layout:" -ForegroundColor Green
-    Get-ChildItem $root | Format-Table Name, Length -AutoSize | Out-String | Write-Host
+    if (-not $Quiet) {
+        Write-Host "[INFO] CIDATA layout:" -ForegroundColor Green
+        Get-ChildItem $root | Format-Table Name, Length -AutoSize | Out-String | Write-Host
 
-    Write-Host "[INFO] Seed disk ready: $OutputPath" -ForegroundColor Green
+        Write-Host "[INFO] Seed disk ready: $OutputPath" -ForegroundColor Green
+    }
 } finally {
     Dismount-VHD -Path $OutputPath -ErrorAction SilentlyContinue
 }

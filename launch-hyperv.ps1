@@ -132,7 +132,7 @@ runcmd:
 "@ | Set-Content -Path $tmpUserData -Encoding UTF8
 
 # Generate CIDATA (suppress helper's chatty instructions)
-& .\scripts\new-cidata-drive.ps1 -UserDataPath $tmpUserData -OutputPath $cidata -SizeMB 64 *>&1 | Out-Null
+& .\scripts\new-cidata-drive.ps1 -UserDataPath $tmpUserData -OutputPath $cidata -SizeMB 64 -Quiet *>&1 | Out-Null
 if (-not (Test-Path $cidata)) {
     Err "CIDATA generation failed"
     exit 1
