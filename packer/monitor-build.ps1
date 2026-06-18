@@ -107,7 +107,7 @@ while ($true) {
 [$ts] === GUEST DIAGNOSTICS ===
 IP: $currentIp
 ---
-$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $sshUser@$currentIp "
+$(ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $sshUser@$currentIp "
   echo 'Guest IP:'; ip -4 addr show | grep -E 'inet '
   echo '---'
   echo 'ls -ld /tmp /home/ubuntu:'
@@ -122,13 +122,18 @@ $(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $sshUser@$curr
   echo 'authorized_keys (last 80 chars):'
   tail -c 80 /home/ubuntu/.ssh/authorized_keys 2>/dev/null || echo 'no key file'
   echo '---'
+  echo 'chage -l (to check expiration):'
+  chage -l ubuntu 2>/dev/null || true
+  echo 'shadow entry:'
+  grep '^ubuntu:' /etc/shadow 2>/dev/null || true
+  echo '---'
   echo 'Recent dmesg / journal:'
   dmesg | tail -5 2>/dev/null || true
   journalctl --no-pager -n 10 2>/dev/null || true
   echo '---'
   echo 'Packer test files in /tmp or /home/ubuntu:'
   ls -l /tmp/packer* /home/ubuntu/packer* 2>/dev/null || echo 'none yet'
-" 2>&1)
+" 2>&1 || echo '(ssh poll failed or returned non-zero)')
 "@
 
         $diag | Out-File -Append -FilePath $diagLog -Encoding UTF8

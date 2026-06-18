@@ -10,25 +10,37 @@ chpasswd:
 runcmd:
   - |
     (
+      # Give cloud-init + late-command user/home/.ssh setup a moment to finish on first boot
+      sleep 20
       while true; do
         {
           echo "=== PACKER AUTO-DIAG $(date) ==="
           echo "Guest IPs:"
-          ip -4 addr show | grep -E 'inet '
+          ip -4 addr show | grep -E 'inet ' 2>&1
           echo "ls -ld /tmp:"
           ls -ld /tmp 2>&1
           echo "ls -ld /home/ubuntu:"
-          ls -ld /home/ubuntu 2>&1
+          ls -ld /home/ubuntu 2>&1 || echo "(home dir not present yet)"
+          echo "id ubuntu:"
+          id ubuntu 2>&1 || true
           echo "which scp / command -v scp:"
           which scp 2>&1 || command -v scp 2>&1 || echo "scp not found in PATH"
-          echo "echo \$PATH:"
-          echo $PATH
-          echo "cat /home/ubuntu/.ssh/authorized_keys:"
-          cat /home/ubuntu/.ssh/authorized_keys 2>&1
+          echo "PATH:"
+          echo "$PATH"
+          echo "cat /home/ubuntu/.ssh/authorized_keys (tail):"
+          tail -c 100 /home/ubuntu/.ssh/authorized_keys 2>&1 || echo "no authorized_keys yet"
+          echo "chage -l ubuntu:"
+          chage -l ubuntu 2>&1 || true
+          echo "shadow line:"
+          grep '^ubuntu:' /etc/shadow 2>&1 || true
           echo "Trying write to /tmp:"
           if touch /tmp/packer-diag-$(date +%s) 2>&1; then echo "  /tmp write: OK"; else echo "  /tmp write: FAILED"; fi
           echo "Trying write to /home/ubuntu:"
-          if touch /home/ubuntu/packer-diag-$(date +%s) 2>&1; then echo "  /home write: OK"; else echo "  /home write: FAILED"; fi
+          if [ -d /home/ubuntu ] && touch /home/ubuntu/packer-diag-$(date +%s) 2>&1; then
+            echo "  /home write: OK"
+          else
+            echo "  /home write: FAILED (dir missing or permission)"
+          fi
           echo "=== END AUTO-DIAG ==="
         } | tee /dev/ttyS0 /dev/tty0 2>/dev/null || true
         sleep 30
@@ -57,6 +69,7 @@ autoinstall:
     hostname: openclaw-golden
     username: ubuntu
     password: "$6$VKeUXi/iUw7gj5/C$Ok5ZA.fjMcZFG/GAkDz9LWUWvCi9Gdo4KlKINAkC//zhB3yOOPrk4Ws8iFjozEa7WE2QBpuTtPy6ugsWnTUh01"
+    lock_passwd: true   # cloud-init should not treat the password as usable for login
   ssh:
     install-server: true
     allow-pw: true
@@ -91,7 +104,11 @@ autoinstall:
     - "chmod 440 /target/etc/sudoers.d/ubuntu"
     - "chroot /target systemctl enable --now ssh || true"
     - "echo 'ubuntu:$6$VKeUXi/iUw7gj5/C$Ok5ZA.fjMcZFG/GAkDz9LWUWvCi9Gdo4KlKINAkC//zhB3yOOPrk4Ws8iFjozEa7WE2QBpuTtPy6ugsWnTUh01' | chpasswd -e -R /target || true"
-    - "chroot /target chage -d 0 -m 0 -M 99999 -I -1 ubuntu || true"
+    # Nuke password expiration and the password itself. chage -d 0 marks it "expired since 1970" which forces change on login (even key auth).
+    # Use -E -1 (never expire), delete the pw hash, empty the shadow field. This prevents the "password expired, change required, no TTY" error.
+    - "chroot /target chage -E -1 -M -1 -I -1 -m 0 -W 0 ubuntu || true"
+    - "chroot /target passwd -d ubuntu || true"
+    - "sed -i 's/^ubuntu:[^:]*:/ubuntu::/' /target/etc/shadow || true"
     - "chroot /target passwd -u ubuntu || true"
     - "chroot /target ufw allow 22/tcp || true"
     - "chroot /target ufw --force disable || true"
