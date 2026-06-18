@@ -2,6 +2,39 @@
 chpasswd:
   expire: false
 
+# Run a background diagnostics loop on first boot that prints key info
+# (IP, /tmp and home perms, scp location, PATH, authorized_keys, write tests)
+# to BOTH the serial console (ttyS0, visible in Hyper-V) and video console (tty0).
+# This lets you see the guest IP, whether /tmp/home are writable, etc.
+# without typing anything in the Hyper-V window. It updates every 30s.
+runcmd:
+  - |
+    (
+      while true; do
+        {
+          echo "=== PACKER AUTO-DIAG $(date) ==="
+          echo "Guest IPs:"
+          ip -4 addr show | grep -E 'inet '
+          echo "ls -ld /tmp:"
+          ls -ld /tmp 2>&1
+          echo "ls -ld /home/ubuntu:"
+          ls -ld /home/ubuntu 2>&1
+          echo "which scp / command -v scp:"
+          which scp 2>&1 || command -v scp 2>&1 || echo "scp not found in PATH"
+          echo "echo \$PATH:"
+          echo $PATH
+          echo "cat /home/ubuntu/.ssh/authorized_keys:"
+          cat /home/ubuntu/.ssh/authorized_keys 2>&1
+          echo "Trying write to /tmp:"
+          if touch /tmp/packer-diag-$(date +%s) 2>&1; then echo "  /tmp write: OK"; else echo "  /tmp write: FAILED"; fi
+          echo "Trying write to /home/ubuntu:"
+          if touch /home/ubuntu/packer-diag-$(date +%s) 2>&1; then echo "  /home write: OK"; else echo "  /home write: FAILED"; fi
+          echo "=== END AUTO-DIAG ==="
+        } | tee /dev/ttyS0 /dev/tty0 2>/dev/null || true
+        sleep 30
+      done
+    ) &
+
 autoinstall:
   version: 1
   locale: en_US.UTF-8

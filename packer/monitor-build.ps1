@@ -8,20 +8,25 @@
 #
 # Prerequisites:
 # - Your SSH private key loaded in the agent (ssh-add) or adjust the ssh command below.
-# - The build VM name matches (default "openclaw-packer-build").
+# - The build VM name matches (default "openclaw-packer-build"; pass -VMName or use same -var for packer).
 # - Run as admin if needed for the pipe.
 #
 # Usage:
 #   1. Open a new PowerShell window
 #   2. cd to the packer dir
-#   3. .\monitor-build.ps1
-#   4. In your main window: packer build .\openclaw.pkr.hcl
+#   3. .\monitor-build.ps1                 # or .\monitor-build.ps1 -VMName myvm -SerialPipe '\\.\pipe\foo'
+#   4. In your main window: packer build .\openclaw.pkr.hcl   # optionally -var 'build_vm_name=xxx'
 #   5. Watch this window for live logs. When done, Ctrl-C here.
 #
 # Logs will be in the current directory.
 
-$vmName = "openclaw-packer-build"
-$serialPipe = "\\.\pipe\openclaw-serial"
+param(
+    [string]$VMName = "openclaw-packer-build",
+    [string]$SerialPipe = "\\.\pipe\openclaw-serial"
+)
+
+$vmName = $VMName
+$serialPipe = $SerialPipe
 $serialLog = "packer-serial.log"
 $diagLog = "packer-guest-diag.log"
 $sshUser = "ubuntu"

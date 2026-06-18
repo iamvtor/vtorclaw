@@ -219,17 +219,16 @@ build {
 
   # Configure the VM's COM1 to a named pipe on the host so we can capture serial
   # console output (including the auto-diagnostics) from the host without watching
-  # the Hyper-V GUI. The monitor script below will tail the pipe.
+  # the Hyper-V GUI. Run packer/monitor-build.ps1 in a second window (it will also attach
+  # if needed). This early provisioner attempts to attach the pipe automatically as soon
+  # as the VM object exists.
   provisioner "shell-local" {
+    # Single command so that the body is passed inside -Command "..." and $vars + pipe path survive.
+    # We use bare $ (HCL allows it; only \\ \" \n etc. are escapes). For the pipe we need to emit
+    # literal \\.\pipe\... so in this HCL "..." we write \\\\ for each \ .
+    environment_vars = ["BUILD_VM_NAME=${var.build_vm_name}"]
     inline = [
-      "powershell -Command \"",
-      "  \$vmName = 'openclaw-packer-build';",
-      "  Write-Host 'Waiting for VM to exist...';",
-      "  while (-not (Get-VM -Name \$vmName -ErrorAction SilentlyContinue)) { Start-Sleep -Milliseconds 500 };",
-      "  Write-Host 'Attaching serial console pipe...';",
-      "  Set-VMComPort -VMName \$vmName -Number 1 -Path '\\\\.\\pipe\\openclaw-serial';",
-      "  Write-Host 'Serial pipe ready: \\\\.\\pipe\\openclaw-serial (use the monitor script to capture)';",
-      "\""
+      "powershell -NoProfile -Command \"& { $vmName = 'openclaw-packer-build'; if ($env:BUILD_VM_NAME) { $vmName = $env:BUILD_VM_NAME }; Write-Host ('Waiting for VM ' + $vmName + ' to exist...'); $deadline = (Get-Date).AddMinutes(3); while (-not (Get-VM -Name $vmName -ErrorAction SilentlyContinue)) { if ((Get-Date) -gt $deadline) { Write-Host 'Timed out waiting for VM object'; break }; Start-Sleep -Milliseconds 500 }; if (Get-VM -Name $vmName -ErrorAction SilentlyContinue) { Set-VMComPort -VMName $vmName -Number 1 -Path '\\\\.\\pipe\\openclaw-serial' -ErrorAction SilentlyContinue; Write-Host ('Serial pipe attached: \\\\.\\pipe\\openclaw-serial for ' + $vmName) } else { Write-Host ('Could not attach pipe: VM ' + $vmName + ' not found') } }\""
     ]
   }
 
