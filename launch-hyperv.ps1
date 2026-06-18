@@ -118,7 +118,8 @@ runcmd:
 
 $cidata = Join-Path $env:TEMP "cidata-$vmName.vhdx"
 Info "Generating CIDATA..."
-& .\scripts\new-cidata-drive.ps1 -UserDataPath $tmpUserData -OutputPath $cidata -SizeMB 64
+& .\scripts\new-cidata-drive.ps1 -UserDataPath $tmpUserData -OutputPath $cidata -SizeMB 64 | Out-Null
+Info "CIDATA ready at $cidata"
 
 $vmDir = "C:\VMs\$vmName"
 New-Item -ItemType Directory -Force -Path $vmDir | Out-Null
