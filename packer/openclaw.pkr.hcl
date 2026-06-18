@@ -21,8 +21,10 @@
 #   packer init .
 #   packer build -var "cpus=4" -var "memory=8192" openclaw.pkr.hcl
 #
-# After build you will have something like:
-#   output-openclaw\Virtual Hard Disks\openclaw.vhdx   (or similar path printed at the end)
+# After a successful build the golden VHDX is always placed at:
+#   openclaw-golden.vhdx   (in the project root, next to the packer/ directory)
+#
+# This location is deterministic.
 #
 # Then use that .vhdx (or a differencing child of it) for fast per-instance VMs
 # with native Hyper-V PowerShell + a small CIDATA seed disk for your vtorclaw.yaml
@@ -205,7 +207,8 @@ source "hyperv-iso" "openclaw" {
   enable_secure_boot = false
   enable_dynamic_memory = true
 
-  # Output location. After successful build the VHDX lives under here.
+  # Internal build output. The final golden image is always copied to a deterministic
+  # location (openclaw-golden.vhdx at the project root) by the post-processor.
   output_directory = "output-openclaw"
   vm_name          = var.build_vm_name
 
@@ -437,17 +440,19 @@ build {
   }
 
   # Tell the user exactly where the usable disk is after the build VM is cleaned up.
-  # Use cmd-compatible echo (the .cmd wrapper Packer generates for shell-local post on Windows
-  # is executed by cmd.exe, not PowerShell). Use explicit powershell for colors if desired.
+  # Deterministic final artifact:
+  # After a successful build, the golden VHDX is always copied to
+  # openclaw-golden.vhdx in the project root (next to the packer/ dir).
+  # This makes the output location predictable and not something you have to hunt for.
   post-processor "shell-local" {
     inline = [
       "echo Packer build finished.",
       "echo.",
-      "echo The golden VHDX is under the output directory. Typical location:",
-      "echo   .\\packer\\output-openclaw\\Virtual Hard Disks\\${var.build_vm_name}.vhdx",
-      "echo   (or open the output-openclaw folder and look for the .vhdx)",
+      "powershell -NoProfile -Command \"Copy-Item -Path 'output-openclaw\\Virtual Hard Disks\\${var.build_vm_name}.vhdx' -Destination '..\\openclaw-golden.vhdx' -Force -ErrorAction Stop\"",
+      "echo The golden VHDX has been placed at:",
+      "echo   openclaw-golden.vhdx   (in the project root)",
       "echo.",
-      "echo Next: use that .vhdx (copy it or make a differencing child) with native Hyper-V New-VM.",
+      "echo Next: use that .vhdx (or a differencing child of it) with native Hyper-V New-VM.",
       "echo A thin CIDATA config drive (generated from your vtorclaw.yaml) supplies the real token, ssh public key (for openclaw as default login user), and per-instance openclaw.json."
     ]
     only_on = ["windows"]
