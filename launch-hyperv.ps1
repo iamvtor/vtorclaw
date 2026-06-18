@@ -173,16 +173,40 @@ Add-VMHardDiskDrive -VMName $vmName -Path $cidata
 Info "Starting VM..."
 Start-VM -Name $vmName
 
+Info "Waiting for guest IP (via Hyper-V integration services)..."
+$ip = $null
+for ($i = 0; $i -lt 30; $i++) {
+    Start-Sleep -Seconds 2
+    $adapter = Get-VMNetworkAdapter -VMName $vmName -ErrorAction SilentlyContinue
+    if ($adapter) {
+        $ips = $adapter.IPAddresses | Where-Object { $_ -match '^\d+\.\d+\.\d+\.\d+$' -and $_ -notlike '169.254.*' }
+        if ($ips) {
+            $ip = $ips | Select-Object -First 1
+            break
+        }
+    }
+}
+
 Write-Host ""
 Write-Host "=== ZERO-TOUCH COMPLETE ===" -ForegroundColor Green
 Write-Host "VM: $vmName (using differencing disk off golden)"
 Write-Host "Golden: $golden"
 Write-Host "CIDATA: $cidata"
 Write-Host ""
-Write-Host "The VM is starting. Give it 30-90 seconds."
-Write-Host "Connect with your SSH key from the spec as the 'openclaw' user."
-Write-Host "openclaw service should be up (baked into golden + activated by CIDATA)."
-Write-Host "To inspect: Get-VM $vmName"
+if ($ip) {
+    Write-Host "SSH into the VM with:"
+    Write-Host "  ssh openclaw@$ip"
+    Write-Host ""
+    Write-Host "Use the private key that matches the ssh_public_key in your vtorclaw.yaml."
+    Write-Host "The openclaw service should start automatically once cloud-init finishes (usually < 60s)."
+} else {
+    Write-Host "Could not auto-detect IP yet."
+    Write-Host "Find it with:"
+    Write-Host "  Get-VMNetworkAdapter -VMName $vmName | Select-Object -ExpandProperty IPAddresses"
+    Write-Host "Or open the VM console in Hyper-V Manager."
+}
+Write-Host ""
+Write-Host "To inspect the VM: Get-VM $vmName"
 Write-Host "===========================" -ForegroundColor Green
 
 Remove-Item $tmpUserData -ErrorAction SilentlyContinue
