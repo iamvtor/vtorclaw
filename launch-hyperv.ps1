@@ -35,6 +35,15 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
     exit 1
 }
 
+# Elevation check - required for New-VM, Mount-VHD, etc.
+$currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Host "[ERROR] This script requires Administrator privileges." -ForegroundColor Red
+    Write-Host "Right-click the PowerShell window title and choose 'Run as Administrator', then re-run the script." -ForegroundColor Yellow
+    Write-Host "Example: pwsh -File .\launch-hyperv.ps1 -Spec vtorclaw.yaml" -ForegroundColor Yellow
+    exit 1
+}
+
 function Info($m) { Write-Host "[INFO] $m" -ForegroundColor Cyan }
 
 if (-not (Test-Path $Spec)) { throw "Spec not found: $Spec. Copy the example and edit." }
