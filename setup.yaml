@@ -1,0 +1,120 @@
+#cloud-config
+users:
+  - default
+  - name: ubuntu
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys:
+      - __SSH_PUBLIC_KEY_PLACEHOLDER__
+
+package_update: true
+packages:
+  - git
+  - curl
+  - ca-certificates
+  - gnupg
+
+write_files:
+  # 1. LiteLLM Routing Configuration
+  - path: /home/ubuntu/litellm_config.yaml
+    owner: ubuntu:ubuntu
+    permissions: '0644'
+    content: |
+      model_list:
+        - model_name: agent-smart
+          litellm_params:
+            model: gemini/gemini-3.1-pro-preview
+            api_key: "os.environ/GEMINI_API_KEY"
+            
+        - model_name: agent-fast
+          litellm_params:
+            model: gemini/gemini-3.5-flash
+            api_key: "os.environ/GEMINI_API_KEY"
+
+      router_settings:
+        num_retries: 3
+        backoff_strategy: "exponential"
+        max_parallel_requests: 2
+
+  # 2. Embedded OpenClaw Configuration (Writes natively during system initialization)
+  - path: /home/ubuntu/.openclaw/openclaw.json
+    owner: ubuntu:ubuntu
+    permissions: '0644'
+    content: |
+      {
+        "provider": "OpenAISpace",
+        "baseUrl": "http://localhost:4000/v1",
+        "apiKey": "bypassed-via-local-proxy-layer",
+        "model": "agent-smart",
+        "messaging": {
+          "platform": "telegram",
+          "telegram_token": "__TELEGRAM_BOT_TOKEN_PLACEHOLDER__",
+          "allowed_user_ids": ["__TELEGRAM_CHAT_ID_PLACEHOLDER__"],
+          "human_in_the_loop": "approve_dangerous_tools"
+        },
+        "agents": {
+          "defaults": {
+            "sandbox": "docker",
+            "sandbox_config": {
+              "image": "://microsoft.com",
+              "volumes": [
+                "/home/ubuntu/workspace:/workspace"
+              ],
+              "network": "host"
+            }
+          }
+        }
+      }
+
+runcmd:
+  # 1. Local Network Perimeter Setup
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow 22/tcp comment 'SSH'
+  - ufw allow 18789/tcp comment 'OpenClaw Web UI'
+  - ufw --force enable
+
+  # 2. Deploy Container Runtime
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://docker.com | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  - chmod a+r /etc/apt/keyrings/docker.gpg
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://docker.com $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  - usermod -aG docker ubuntu
+
+  # 3. Deploy uv Toolchain
+  - curl -LsSf https://astral.sh | sh
+  - ln -s /root/.local/bin/uv /usr/local/bin/uv
+
+  # 4. Isolate LiteLLM Engine thread via uv
+  - uv tool install 'litellm[proxy]'
+
+  # 5. Download OpenClaw Gateway Base
+  - curl -fsSL https://openclaw.ai | sh
+
+  # 6. Map Shared Volumes Folder
+  - mkdir -p /home/ubuntu/workspace
+  - chown -R ubuntu:ubuntu /home/ubuntu/workspace
+
+  # 7. Establish the background LiteLLM systemd service
+  - |
+    cat << 'EOF' > /etc/systemd/system/litellm.service
+    [Unit]
+    Description=LiteLLM Proxy Engine via uv Toolchain
+    After=network.target
+
+    [Service]
+    Type=simple
+    User=root
+    Environment="GEMINI_API_KEY=__GEMINI_API_KEY_PLACEHOLDER__"
+    ExecStart=/root/.local/bin/litellm --config /home/ubuntu/litellm_config.yaml --port 4000
+    Restart=always
+
+    [Install]
+    WantedBy=multi-user.target
+    EOF
+
+  - systemctl daemon-reload
+  - systemctl enable litellm.service
+  - systemctl start litellm.service
+
